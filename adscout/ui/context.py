@@ -31,6 +31,7 @@ class AppContext:
     limiter: DailyCallLimiter
     gemini: GeminiProvider
     perplexity: PerplexityProvider
+    db_backend: str = "sqlite"
 
 
 def _sync_streamlit_secrets_to_env() -> None:
@@ -47,15 +48,13 @@ def _sync_streamlit_secrets_to_env() -> None:
 
 
 @st.cache_resource(show_spinner=False)
-def _get_initialized_engine(db_url: str) -> Engine:
-    """Crea e inicializa el motor SQLAlchemy una sola vez por proceso, con fallback a /tmp si SQLite falla."""
+def _get_initialized_engine(db_url: str) -> tuple[Engine, str | None]:
+    """Crea e inicializa el motor SQLAlchemy una sola vez, con fallback seguro a SQLite si falla."""
     engine = create_db_engine(db_url)
     try:
         init_db(engine)
-        return engine
-    except OperationalError:
-        if not db_url.startswith("sqlite"):
-            raise
+        return engine, None
+    except OperationalError as exc:
         fallback_dir = Path(tempfile.gettempdir()) / "adscout"
         fallback_dir.mkdir(parents=True, exist_ok=True)
         fallback_url = f"sqlite:///{(fallback_dir / 'adscout.db').resolve().as_posix()}"
@@ -63,16 +62,25 @@ def _get_initialized_engine(db_url: str) -> Engine:
             raise
         fallback_engine = create_db_engine(fallback_url)
         init_db(fallback_engine)
-        return fallback_engine
+        reason = (
+            "No se pudo conectar a PostgreSQL/Supabase (verifica que hayas restablecido la contraseña "
+            "de la base de datos del proyecto `adscout` en Supabase y la hayas puesto en Secrets). "
+            "Usando SQLite temporal mientras tanto."
+            if not db_url.startswith("sqlite")
+            else str(exc)
+        )
+        return fallback_engine, reason
 
 
 def build_app_context() -> AppContext:
-    """Inicializa configuración, SQLite, motor de scoring y proveedores LLM opcionales."""
+    """Inicializa configuración, SQLite/PostgreSQL, motor de scoring y proveedores LLM opcionales."""
     _sync_streamlit_secrets_to_env()
     settings = load_settings()
     configure_logging(settings.log_level)
 
-    engine = _get_initialized_engine(settings.db_url)
+    engine, db_warning = _get_initialized_engine(settings.db_url)
+    if db_warning:
+        st.sidebar.warning(db_warning)
     repository = AdRepository(create_session_factory(engine))
 
     markets = load_markets(settings.markets_dir)
@@ -97,4 +105,5 @@ def build_app_context() -> AppContext:
         limiter=limiter,
         gemini=gemini,
         perplexity=perplexity,
+        db_backend=engine.dialect.name,
     )
