@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,16 +49,41 @@ def _resolve_path(raw_path: str, base_dir: Path = PROJECT_ROOT) -> Path:
     return path if path.is_absolute() else (base_dir / path).resolve()
 
 
+def _fallback_sqlite_url(filename: str = "adscout.db") -> str:
+    """Devuelve una ruta SQLite escribible en el directorio temporal del sistema."""
+    fallback_dir = Path(tempfile.gettempdir()) / "adscout"
+    fallback_dir.mkdir(parents=True, exist_ok=True)
+    fallback_path = (fallback_dir / filename).resolve()
+    return f"sqlite:///{fallback_path.as_posix()}"
+
+
+def _is_sqlite_dir_writable(target_path: Path) -> bool:
+    """Verifica si el directorio destino permite crear y escribir archivos SQLite."""
+    # En Streamlit Community Cloud /mount/src puede fallar al bloquear o escribir SQLite.
+    if target_path.as_posix().startswith("/mount/src/"):
+        return False
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        probe = target_path.parent / ".adscout_write_probe"
+        probe.touch(exist_ok=True)
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
 def _resolve_db_url(raw_url: str, base_dir: Path = PROJECT_ROOT) -> str:
-    """Resuelve rutas relativas de SQLite y crea el directorio padre si no existe."""
+    """Resuelve rutas relativas de SQLite y usa un fallback escribible si el directorio es de solo lectura."""
     if raw_url.startswith("sqlite:///") and not raw_url.startswith("sqlite:////") and raw_url != "sqlite:///:memory:":
         rel_part = raw_url.removeprefix("sqlite:///")
         abs_path = (base_dir / rel_part).resolve()
-        abs_path.parent.mkdir(parents=True, exist_ok=True)
-        return f"sqlite:///{abs_path}"
+        if not _is_sqlite_dir_writable(abs_path):
+            return _fallback_sqlite_url(Path(rel_part).name or "adscout.db")
+        return f"sqlite:///{abs_path.as_posix()}"
     if raw_url.startswith("sqlite:////"):
         abs_path = Path(raw_url.removeprefix("sqlite:///"))
-        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        if not _is_sqlite_dir_writable(abs_path):
+            return _fallback_sqlite_url(abs_path.name or "adscout.db")
     return raw_url
 
 

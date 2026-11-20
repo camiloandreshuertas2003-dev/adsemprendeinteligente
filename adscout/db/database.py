@@ -10,7 +10,7 @@ from adscout.db.orm import Base
 
 def create_db_engine(db_url: str) -> Engine:
     """Crea un Engine de SQLAlchemy configurado para SQLite."""
-    connect_args = {"check_same_thread": False} if db_url.startswith("sqlite") else {}
+    connect_args = {"check_same_thread": False, "timeout": 30} if db_url.startswith("sqlite") else {}
     return create_engine(db_url, future=True, connect_args=connect_args)
 
 

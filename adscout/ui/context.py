@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 import streamlit as st
+from sqlalchemy import Engine
+from sqlalchemy.exc import OperationalError
 
 from adscout.config import AppSettings, load_markets, load_scoring_config, load_settings
 from adscout.db.database import create_db_engine, create_session_factory, init_db
@@ -42,14 +46,33 @@ def _sync_streamlit_secrets_to_env() -> None:
         return
 
 
+@st.cache_resource(show_spinner=False)
+def _get_initialized_engine(db_url: str) -> Engine:
+    """Crea e inicializa el motor SQLAlchemy una sola vez por proceso, con fallback a /tmp si SQLite falla."""
+    engine = create_db_engine(db_url)
+    try:
+        init_db(engine)
+        return engine
+    except OperationalError:
+        if not db_url.startswith("sqlite"):
+            raise
+        fallback_dir = Path(tempfile.gettempdir()) / "adscout"
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        fallback_url = f"sqlite:///{(fallback_dir / 'adscout.db').resolve().as_posix()}"
+        if fallback_url == db_url:
+            raise
+        fallback_engine = create_db_engine(fallback_url)
+        init_db(fallback_engine)
+        return fallback_engine
+
+
 def build_app_context() -> AppContext:
     """Inicializa configuración, SQLite, motor de scoring y proveedores LLM opcionales."""
     _sync_streamlit_secrets_to_env()
     settings = load_settings()
     configure_logging(settings.log_level)
 
-    engine = create_db_engine(settings.db_url)
-    init_db(engine)
+    engine = _get_initialized_engine(settings.db_url)
     repository = AdRepository(create_session_factory(engine))
 
     markets = load_markets(settings.markets_dir)
