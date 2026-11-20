@@ -160,5 +160,42 @@ class GeminiProvider(LLMProvider):
             raise LLMError(f"El JSON devuelto por Gemini no cumple el esquema esperado: {exc}") from exc
 
         repository.save_ad_analysis(ad.ad_id, result)
-        logger.info("Análisis Gemini guardado en SQLite para ad_id=%s (nicho=%s)", ad.ad_id, result.nicho)
+        logger.info("Análisis Gemini guardado en BD para ad_id=%s (nicho=%s)", ad.ad_id, result.nicho)
         return result, False
+
+    def tropicalize_offer(
+        self,
+        raw_copy: str,
+        source_market_name: str,
+        target_countries: str,
+        limiter: DailyCallLimiter,
+        target_id: str = "manual",
+    ) -> dict[str, Any]:
+        """Toma un anuncio ganador (en cualquier idioma) y genera un plan para tropicalizarlo al español."""
+        if not self.is_configured():
+            raise LLMConfigError(
+                "GEMINI_API_KEY no está configurada. Agrégala en Streamlit Secrets o en .env."
+            )
+        if not raw_copy.strip():
+            raise LLMError("Pega el texto o titular del anuncio para poder tropicalizarlo.")
+
+        limiter.assert_within_limit()
+        prompt = (
+            f"Eres un estratega de infoproductos (ebooks, PDFs, plantillas, guías low-ticket) para LATAM y España.\n"
+            f"Analiza este anuncio ganador detectado en {source_market_name} y crea una propuesta para "
+            f"tropicalizar y mejorar la oferta para {target_countries}.\n\n"
+            f"TEXTO DEL ANUNCIO ORIGINAL:\n{raw_copy.strip()}\n\n"
+            "Devuelve EXCLUSIVAMENTE un objeto JSON válido con estas claves exactas (todo en español):\n"
+            "{\n"
+            '  "traduccion_resumen": "traducción clara y resumen de qué vende exactamente el anuncio",\n'
+            '  "dolor_deseo": "dolor principal o deseo urgente que activa en el comprador",\n'
+            '  "titulo_sugerido_es": "título atractivo y comercial en español para tu propio PDF/ebook",\n'
+            '  "estructura_pdf": ["Capítulo 1...", "Capítulo 2...", "Capítulo 3...", "Capítulo 4...", "Capítulo 5..."],\n'
+            '  "bonos_sugeridos": ["Bono 1...", "Bono 2...", "Bono 3..."],\n'
+            '  "precio_sugerido_usd": "rango de precio low-ticket sugerido (ej. $9 - $19 USD)",\n'
+            '  "hooks_anuncios": ["Hook/Copy 1 listo para FB/IG Ads...", "Hook/Copy 2...", "Hook/Copy 3..."]\n'
+            "}"
+        )
+        raw_text, _ = self.invoke(prompt)
+        limiter.record_call(provider=self.provider_name, action="tropicalize_offer", target_id=target_id)
+        return extract_json_object(raw_text)

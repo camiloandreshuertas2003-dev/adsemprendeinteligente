@@ -10,12 +10,67 @@ from adscout.models.market import MarketConfig
 from adscout.ui.context import AppContext
 
 
+def _render_tropicalizer_box(ctx: AppContext, market: MarketConfig) -> None:
+    """Herramienta rápida con Gemini para traducir y tropicalizar cualquier anuncio al español."""
+    with st.expander("✨ Tropicalizador Rápido con Gemini (pega cualquier anuncio de FB y crea tu plan de PDF/Ebook)", expanded=False):
+        st.caption(
+            "¿Viste un anuncio ganador en Brasil, USA, Francia o Alemania? Pega aquí el texto o titular "
+            "y Gemini te entrega traducción, estructura del PDF, bonos y 3 hooks listos en español."
+        )
+        raw_copy = st.text_area(
+            "Texto del anuncio original (en portugués, inglés, francés, etc.)",
+            height=110,
+            placeholder="Ej: Descubra o método em PDF com 50 receitas sem açúcar para emagrecer...",
+            key="tropicalize_manual_copy",
+        )
+        target_countries = st.text_input(
+            "Mercado destino en español",
+            value="Colombia, México, Chile, Perú y Argentina",
+            key="tropicalize_target_countries",
+        )
+        if st.button("✨ Tropicalizar oferta con Gemini", type="primary", key="tropicalize_manual_btn"):
+            try:
+                with st.spinner("Generando plan de producto y hooks con Gemini..."):
+                    plan = ctx.gemini.tropicalize_offer(
+                        raw_copy=raw_copy,
+                        source_market_name=f"{market.name} ({market.country})",
+                        target_countries=target_countries,
+                        limiter=ctx.limiter,
+                        target_id="manual_tropicalize",
+                    )
+                st.success(f"**Título sugerido:** {plan.get('titulo_sugerido_es', 'N/D')}")
+                st.write(f"**Traducción / Qué vende:** {plan.get('traduccion_resumen', '')}")
+                st.write(f"**Dolor / Deseo:** {plan.get('dolor_deseo', '')}")
+                st.write(f"**Precio sugerido:** `{plan.get('precio_sugerido_usd', 'N/D')}`")
+
+                p_col1, p_col2 = st.columns(2)
+                with p_col1:
+                    st.markdown("**📘 Estructura sugerida del PDF / Ebook:**")
+                    for item in plan.get("estructura_pdf", []):
+                        st.write(f"- {item}")
+                with p_col2:
+                    st.markdown("**🎁 Bonos sugeridos:**")
+                    for bono in plan.get("bonos_sugeridos", []):
+                        st.write(f"- {bono}")
+
+                st.markdown("**📣 3 Hooks / Copies listos para probar en Meta Ads:**")
+                for idx, hook in enumerate(plan.get("hooks_anuncios", []), start=1):
+                    st.info(f"**Hook {idx}:** {hook}")
+            except (LLMConfigError, LLMDailyLimitExceededError, LLMError) as exc:
+                st.error(str(exc))
+
+
 def render_detail_page(ctx: AppContext, market: MarketConfig) -> None:
     st.header(f"Detalle de Producto / Página — {market.name} ({market.country})")
 
+    _render_tropicalizer_box(ctx, market)
+
     ranked_items = ctx.pipeline.get_ranked_ads(market=market, only_active=False)
     if not ranked_items:
-        st.info("No hay anuncios cargados todavía. Importa datos en la página **Mercado**.")
+        st.info(
+            "No hay anuncios cargados todavía en este mercado. Importa datos en **📥 Mercado e Ingesta** "
+            "o usa el **✨ Tropicalizador Rápido** arriba pegando cualquier anuncio de Facebook."
+        )
         return
 
     # Agrupar páginas ordenadas por puntaje máximo
