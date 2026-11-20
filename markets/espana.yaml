@@ -1,0 +1,28 @@
+# Configuración de mercado: España (es-ES)
+code: espana
+name: España
+country: ES
+language: es-ES
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - guía práctica
+  - plantilla
+  - método
+  - curso online
+  - descarga inmediata
+  - cuaderno
+  - whop
+
+checkout_domains:
+  - hotmart.com
+  - systeme.io
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - whop.com
+  - thrivecart.com
+  - stripe.com
+  - teachable.com

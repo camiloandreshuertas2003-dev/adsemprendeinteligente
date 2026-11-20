@@ -1,0 +1,28 @@
+# Configuración de mercado: Alemania (de-DE)
+code: alemania
+name: Alemania
+country: DE
+language: de-DE
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - ratgeber
+  - anleitung
+  - vorlage
+  - online kurs
+  - sofortdownload
+  - workbook
+  - whop
+
+checkout_domains:
+  - digistore24.com
+  - copecart.com
+  - ablefy.io
+  - elopage.com
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - whop.com
+  - stripe.com

@@ -1,0 +1,28 @@
+# Configuración de mercado: Italia (it-IT)
+code: italia
+name: Italia
+country: IT
+language: it-IT
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - guida pratica
+  - manuale
+  - metodo
+  - corso online
+  - download immediato
+  - template
+  - whop
+
+checkout_domains:
+  - hotmart.com
+  - systeme.io
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - whop.com
+  - thrivecart.com
+  - clickfunnels.com
+  - stripe.com

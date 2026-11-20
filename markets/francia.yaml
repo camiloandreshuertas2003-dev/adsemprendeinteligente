@@ -1,0 +1,28 @@
+# Configuración de mercado: Francia (fr-FR)
+code: francia
+name: Francia
+country: FR
+language: fr-FR
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - guide pratique
+  - méthode
+  - formation en ligne
+  - template
+  - téléchargement immédiat
+  - cahier
+  - whop
+
+checkout_domains:
+  - systeme.io
+  - podia.com
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - hotmart.com
+  - whop.com
+  - thrivecart.com
+  - stripe.com

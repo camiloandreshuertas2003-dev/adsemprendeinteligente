@@ -42,6 +42,12 @@ def render_detail_page(ctx: AppContext, market: MarketConfig) -> None:
     page_info = pages[selected_page_id]
     page_items = page_info["items"]
 
+    if page_items:
+        st.link_button(
+            f"🕵️ Espiar todos los anuncios activos de {page_info['page_name']} en Meta Ad Library ↗",
+            page_items[0]["fb_page_url"],
+        )
+
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total anuncios", len(page_items))
     m2.metric("Activos", sum(1 for i in page_items if i["ad"].is_active))
@@ -96,8 +102,12 @@ def render_detail_page(ctx: AppContext, market: MarketConfig) -> None:
                     f"**Inicio:** {ad.start_date or 'N/D'} · **Fin:** {ad.end_date or 'Activo'} · "
                     f"**Visto:** {ad.first_seen_at.date()} → {ad.last_seen_at.date()}"
                 )
-                if ad.snapshot_url:
-                    st.link_button("Abrir snapshot en Meta Ad Library", ad.snapshot_url)
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    st.link_button("🔎 Ver anuncio en Meta Ad Library ↗", item["fb_ad_url"], use_container_width=True)
+                with btn_col2:
+                    if ad.link_url:
+                        st.link_button("💳 Abrir página de ventas ↗", ad.link_url, use_container_width=True)
 
                 st.markdown("**Desglose del puntaje:**")
                 bd_df = pd.DataFrame(

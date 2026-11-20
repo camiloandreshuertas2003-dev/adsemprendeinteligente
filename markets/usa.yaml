@@ -1,0 +1,31 @@
+# Configuración de mercado: Estados Unidos (en-US)
+code: usa
+name: Estados Unidos
+country: US
+language: en-US
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - digital guide
+  - workbook
+  - blueprint
+  - template
+  - cheat sheet
+  - instant download
+  - whop
+
+checkout_domains:
+  - stan.store
+  - gumroad.com
+  - payhip.com
+  - whop.com
+  - clickfunnels.com
+  - thrivecart.com
+  - samcart.com
+  - teachable.com
+  - kajabi.com
+  - systeme.io
+  - hotmart.com
+  - stripe.com

@@ -10,18 +10,32 @@ from adscout.ui.context import AppContext
 
 
 def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
-    st.header(f"Ranking de Productos Digitales — {market.name} ({market.country})")
+    st.header("🏆 Ranking de Productos Digitales")
     st.caption(
         "Transparencia del scoring (0–100): Meta NO publica ventas ni gasto de anuncios comerciales. "
         "El puntaje usa únicamente proxies observables (días activo, variantes, anuncios activos de la página, "
         "dominio de checkout conocido y palabras clave digitales)."
     )
 
-    ranked_items = ctx.pipeline.get_ranked_ads(market=market, only_active=False)
+    scope = st.radio(
+        "Alcance del ranking",
+        options=[
+            f"Mercado actual: {market.name} ({market.country})",
+            "🌍 Radar Global (Todos los mercados)",
+        ],
+        horizontal=True,
+    )
+    is_global = scope.startswith("🌍")
+
+    if is_global:
+        ranked_items = ctx.pipeline.get_global_ranked_ads(markets=ctx.markets, only_active=False)
+    else:
+        ranked_items = ctx.pipeline.get_ranked_ads(market=market, only_active=False)
+
     if not ranked_items:
         st.info(
-            "No hay anuncios cargados para este mercado todavía. "
-            "Ve a la página **Mercado** e importa `brasil_ads_sample.csv` en un clic."
+            "No hay anuncios cargados todavía. "
+            "Ve a **📥 Mercado e Ingesta** para importar datos (o prueba en 1 clic con `brasil_ads_sample.csv`)."
         )
         return
 
@@ -29,31 +43,41 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
     all_niches = sorted({item["nicho"] for item in ranked_items})
     all_checkouts = sorted({item["matched_checkout"] for item in ranked_items if item["matched_checkout"]})
 
-    f_col1, f_col2, f_col3, f_col4 = st.columns([2, 2, 1.5, 1])
+    f_col1, f_col2, f_col3 = st.columns([2, 2, 1.3])
     with f_col1:
         selected_niches = st.multiselect("Filtrar por nicho", options=all_niches, default=[])
     with f_col2:
         selected_checkouts = st.multiselect("Dominio de checkout", options=all_checkouts, default=[])
     with f_col3:
         min_days = st.number_input("Días activo mínimo", min_value=0, max_value=3650, value=0, step=1)
-    with f_col4:
-        only_active = st.checkbox("Solo activos", value=True)
 
-    search_text = st.text_input("Buscar por página, titular o texto del anuncio", value="").strip().lower()
+    q1, q2, q3, q4 = st.columns([1.2, 1.6, 1.5, 2.7])
+    with q1:
+        only_active = st.checkbox("Solo activos", value=True)
+    with q2:
+        only_with_checkout = st.checkbox("Solo con checkout conocido", value=False)
+    with q3:
+        only_14d = st.checkbox("Activos ≥ 14 días", value=False)
+    with q4:
+        search_text = st.text_input("Buscar por página, titular, país o texto", value="").strip().lower()
+
+    effective_min_days = max(int(min_days), 14 if only_14d else 0)
 
     filtered = []
     for item in ranked_items:
         ad = item["ad"]
         if only_active and not ad.is_active:
             continue
-        if item["days_active"] < min_days:
+        if only_with_checkout and not item["matched_checkout"]:
+            continue
+        if item["days_active"] < effective_min_days:
             continue
         if selected_niches and item["nicho"] not in selected_niches:
             continue
         if selected_checkouts and item["matched_checkout"] not in selected_checkouts:
             continue
         if search_text:
-            blob = f"{ad.page_name} {ad.headline} {ad.ad_text} {ad.link_domain or ''}".lower()
+            blob = f"{ad.country} {ad.page_name} {ad.headline} {ad.ad_text} {ad.link_domain or ''}".lower()
             if search_text not in blob:
                 continue
         filtered.append(item)
@@ -83,6 +107,7 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
         rows.append(
             {
                 "Puntaje": score.total_score,
+                "País": ad.country,
                 "Página": ad.page_name,
                 "Nicho": item["nicho"],
                 "Titular": ad.headline or "(sin titular)",
@@ -92,7 +117,9 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
                 "Variantes": ad.variants_count,
                 "Anuncios activos pág.": item["page_active_ads"],
                 "Activo": ad.is_active,
-                "Snapshot": ad.snapshot_url,
+                "FB Anuncio": item["fb_ad_url"],
+                "FB Página": item["fb_page_url"],
+                "Checkout / Web": ad.link_url,
                 "ad_id": ad.ad_id,
                 "pts_dias": comp["days_active"].points,
                 "pts_variantes": comp["variants_count"].points,
@@ -108,15 +135,16 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
 
     display_cols = [
         "Puntaje",
+        *(["País"] if is_global else []),
         "Página",
-        "Nicho",
         "Titular",
         "Checkout",
         "Días activo",
         "Variantes",
         "Anuncios activos pág.",
-        "Activo",
-        "Snapshot",
+        "FB Anuncio",
+        "FB Página",
+        "Checkout / Web",
     ]
 
     st.dataframe(
@@ -130,7 +158,9 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
                 max_value=100,
                 format="%.1f",
             ),
-            "Snapshot": st.column_config.LinkColumn("Snapshot Meta", display_text="Abrir anuncio"),
+            "FB Anuncio": st.column_config.LinkColumn("Anuncio FB", display_text="Ver anuncio ↗"),
+            "FB Página": st.column_config.LinkColumn("Página FB", display_text="Espiar página ↗"),
+            "Checkout / Web": st.column_config.LinkColumn("Página de Ventas", display_text="Abrir web ↗"),
         },
     )
 
@@ -139,7 +169,7 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
     st.download_button(
         label="Exportar ranking filtrado a CSV",
         data=csv_bytes,
-        file_name=f"adscout_ranking_{market.code}.csv",
+        file_name=f"adscout_ranking_{'global' if is_global else market.code}.csv",
         mime="text/csv",
     )
 
@@ -147,7 +177,7 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
     st.divider()
     st.subheader("Desglose transparente del puntaje por anuncio")
     ad_options = {
-        f"[{item['score'].total_score:.1f} pts] {item['ad'].page_name} — {item['ad'].headline or item['ad'].ad_id}": item
+        f"[{item['score'].total_score:.1f} pts · {item['ad'].country}] {item['ad'].page_name} — {item['ad'].headline or item['ad'].ad_id}": item
         for item in filtered
     }
     chosen_label = st.selectbox("Selecciona un anuncio para inspeccionar su puntaje", options=list(ad_options.keys()))
@@ -155,7 +185,7 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
     chosen_ad = chosen["ad"]
     chosen_score = chosen["score"]
 
-    c_left, c_right = st.columns([2, 1])
+    c_left, c_right = st.columns([2, 1.2])
     with c_left:
         breakdown_rows = [
             {
@@ -170,8 +200,12 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
     with c_right:
         st.metric("Puntaje Total", f"{chosen_score.total_score:.1f} / 100")
         st.write(f"**Página:** {chosen_ad.page_name} (`{chosen_ad.page_id}`)")
-        st.write(f"**Enlace:** {chosen_ad.link_url or 'N/D'}")
-        if chosen_ad.snapshot_url:
-            st.link_button("Ver snapshot en Meta Ad Library", chosen_ad.snapshot_url)
+        st.write(f"**País:** `{chosen_ad.country}` · **Dominio:** `{chosen_ad.link_domain or 'N/D'}`")
+
+        st.link_button("🔎 Ver anuncio en Meta Ad Library ↗", chosen["fb_ad_url"], use_container_width=True)
+        st.link_button("🕵️ Espiar toda la página en Facebook ↗", chosen["fb_page_url"], use_container_width=True)
+        if chosen_ad.link_url:
+            st.link_button("💳 Abrir página de ventas / checkout ↗", chosen_ad.link_url, use_container_width=True)
+
         st.write("**Texto del anuncio:**")
         st.caption(chosen_ad.ad_text or "(sin texto)")

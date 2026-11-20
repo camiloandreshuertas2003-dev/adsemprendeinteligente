@@ -14,6 +14,7 @@ from adscout.models.llm import AdAnalysisResult
 from adscout.models.market import MarketConfig
 from adscout.models.scoring import ScoreResult
 from adscout.scoring.engine import ScoringEngine
+from adscout.services.meta_links import build_ad_library_ad_url, build_ad_library_page_url
 from adscout.sources.base import AdSource
 
 logger = logging.getLogger("adscout.services.pipeline")
@@ -85,17 +86,112 @@ class IngestionPipeline:
             ranked.append(
                 {
                     "ad": ad,
+                    "market_code": market.code,
+                    "market_name": market.name,
                     "score": score_result,
                     "analysis": analysis,
                     "days_active": ad.days_active(reference_date=reference_date),
                     "page_active_ads": page_counts.get(ad.page_id, 0),
                     "matched_checkout": matched_checkout,
                     "nicho": analysis.nicho if analysis else _infer_fallback_topic(ad, market),
+                    "fb_ad_url": build_ad_library_ad_url(
+                        ad_id=ad.ad_id,
+                        country=ad.country or market.country,
+                        snapshot_url=ad.snapshot_url,
+                        fallback_query=ad.headline or ad.page_name,
+                    ),
+                    "fb_page_url": build_ad_library_page_url(
+                        page_id=ad.page_id,
+                        page_name=ad.page_name,
+                        country=ad.country or market.country,
+                    ),
                 }
             )
 
         ranked.sort(key=lambda item: (item["score"].total_score, item["days_active"]), reverse=True)
         return ranked
+
+    def get_global_ranked_ads(
+        self,
+        markets: dict[str, MarketConfig],
+        only_active: bool = False,
+        reference_date: date | None = None,
+    ) -> list[dict[str, Any]]:
+        """Combina y ordena anuncios rankeados de todos los mercados cargados (Radar Global)."""
+        combined: list[dict[str, Any]] = []
+        seen_ad_ids: set[str] = set()
+        for market in markets.values():
+            for item in self.get_ranked_ads(
+                market=market,
+                only_active=only_active,
+                reference_date=reference_date,
+            ):
+                ad_id = item["ad"].ad_id
+                if ad_id in seen_ad_ids:
+                    continue
+                seen_ad_ids.add(ad_id)
+                combined.append(item)
+
+        combined.sort(key=lambda item: (item["score"].total_score, item["days_active"]), reverse=True)
+        return combined
+
+
+def build_scaling_offers(ranked_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Agrupa anuncios por página/anunciante para identificar ofertas digitales que están escalando."""
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in ranked_items:
+        ad = item["ad"]
+        key = (ad.page_id, ad.country)
+        groups.setdefault(key, []).append(item)
+
+    offers: list[dict[str, Any]] = []
+    for (page_id, country), items in groups.items():
+        items_sorted = sorted(items, key=lambda x: (x["score"].total_score, x["days_active"]), reverse=True)
+        top = items_sorted[0]
+        top_ad = top["ad"]
+        active_ads = sum(1 for i in items if i["ad"].is_active)
+        total_variants = sum(max(1, i["ad"].variants_count) for i in items)
+        max_days = max(i["days_active"] for i in items)
+        max_score = max(i["score"].total_score for i in items)
+        avg_score = round(sum(i["score"].total_score for i in items) / len(items), 1)
+        checkouts = sorted({i["matched_checkout"] for i in items if i["matched_checkout"]})
+        top_link = next((i["ad"].link_url for i in items_sorted if i["ad"].link_url), None)
+
+        if (active_ads >= 5 and max_days >= 14) or (max_score >= 75 and max_days >= 21):
+            signal = "🔥 Escalando fuerte"
+        elif active_ads >= 2 or max_days >= 14 or max_score >= 55:
+            signal = "⚡ Tracción activa"
+        else:
+            signal = "🧪 En prueba"
+
+        offers.append(
+            {
+                "signal": signal,
+                "page_id": page_id,
+                "page_name": top_ad.page_name,
+                "country": country,
+                "market_name": top.get("market_name", country),
+                "active_ads": active_ads,
+                "total_ads": len(items),
+                "total_variants": total_variants,
+                "max_days_active": max_days,
+                "max_score": max_score,
+                "avg_score": avg_score,
+                "checkouts": ", ".join(checkouts) if checkouts else "-",
+                "top_nicho": top["nicho"],
+                "top_headline": top_ad.headline or "(sin titular)",
+                "top_link_url": top_link,
+                "fb_page_url": top["fb_page_url"],
+                "fb_top_ad_url": top["fb_ad_url"],
+                "items": items_sorted,
+            }
+        )
+
+    offers.sort(
+        key=lambda o: (o["active_ads"], o["max_score"], o["max_days_active"]),
+        reverse=True,
+    )
+    return offers
 
 
 def _infer_fallback_topic(ad: Ad, market: MarketConfig) -> str:

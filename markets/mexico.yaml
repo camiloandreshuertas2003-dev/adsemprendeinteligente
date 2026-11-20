@@ -1,0 +1,27 @@
+# Configuración de mercado: México (es-MX)
+code: mexico
+name: México
+country: MX
+language: es-MX
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - guía completa
+  - plantilla
+  - método
+  - curso online
+  - descarga inmediata
+  - recetario
+  - whop
+
+checkout_domains:
+  - hotmart.com
+  - kiwify.com.br
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - whop.com
+  - systeme.io
+  - stripe.com

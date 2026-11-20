@@ -1,0 +1,26 @@
+# Configuración de mercado: Colombia (es-CO)
+code: colombia
+name: Colombia
+country: CO
+language: es-CO
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - guía práctica
+  - plantilla
+  - método
+  - curso online
+  - descarga inmediata
+  - manual
+  - whop
+
+checkout_domains:
+  - hotmart.com
+  - whop.com
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - systeme.io
+  - stripe.com
