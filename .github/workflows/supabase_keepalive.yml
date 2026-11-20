@@ -1,0 +1,20 @@
+name: Supabase Keep-Alive (cada 3 días)
+
+on:
+  schedule:
+    # Se ejecuta cada 3 días a las 12:00 UTC para mantener activo el proyecto gratuito de Supabase
+    - cron: "0 12 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API (keepalive_pings)
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            "https://shqaecbawytquagnyias.supabase.co/rest/v1/keepalive_pings?select=id,source,pinged_at&order=pinged_at.desc&limit=1" \
+            -H "apikey: sb_publishable_KLW3AxTnY2WKb-RhuLkxYw_Ck9I46o-")
+          echo "HTTP Status: $STATUS"
+          cat /tmp/resp.json
+          test "$STATUS" -eq 200

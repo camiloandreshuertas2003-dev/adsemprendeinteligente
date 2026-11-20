@@ -8,10 +8,27 @@ from sqlalchemy.orm import Session, sessionmaker
 from adscout.db.orm import Base
 
 
+def _normalize_db_url(db_url: str) -> str:
+    """Normaliza URIs de PostgreSQL/Supabase para usar el driver psycopg (v3)."""
+    cleaned = db_url.strip()
+    if cleaned.startswith("postgres://"):
+        return "postgresql+psycopg://" + cleaned.removeprefix("postgres://")
+    if cleaned.startswith("postgresql://"):
+        return "postgresql+psycopg://" + cleaned.removeprefix("postgresql://")
+    return cleaned
+
+
 def create_db_engine(db_url: str) -> Engine:
-    """Crea un Engine de SQLAlchemy configurado para SQLite."""
-    connect_args = {"check_same_thread": False, "timeout": 30} if db_url.startswith("sqlite") else {}
-    return create_engine(db_url, future=True, connect_args=connect_args)
+    """Crea un Engine de SQLAlchemy configurado para SQLite o PostgreSQL (Supabase)."""
+    normalized_url = _normalize_db_url(db_url)
+    is_sqlite = normalized_url.startswith("sqlite")
+    connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
+    return create_engine(
+        normalized_url,
+        future=True,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:

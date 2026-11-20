@@ -56,7 +56,9 @@ def main() -> None:
         )
 
         st.divider()
+        is_pg = ctx.settings.db_url.startswith(("postgres://", "postgresql://", "postgresql+"))
         st.caption(f"Mercados activos: **{len(ctx.markets)} países**")
+        st.caption(f"Base de datos: **{'🟢 Supabase (PostgreSQL)' if is_pg else '🟡 SQLite local/temp'}**")
         st.caption("Estado de módulos opcionales")
         st.write(f"- Gemini: {'✅ Configurado' if ctx.gemini.is_configured() else '⚪ Inactivo (sin clave)'}")
         st.write(f"- Perplexity: {'✅ Configurado' if ctx.perplexity.is_configured() else '⚪ Inactivo (sin clave)'}")

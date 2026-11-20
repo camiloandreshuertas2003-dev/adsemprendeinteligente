@@ -15,6 +15,7 @@ from adscout.db.orm import (
     IngestionRunORM,
     LLMUsageLogORM,
     NicheValidationORM,
+    SavedOfferORM,
 )
 from adscout.models.ad import Ad, utc_now
 from adscout.models.llm import AdAnalysisResult, NicheValidationResult
@@ -414,3 +415,83 @@ class AdRepository:
                 )
             )
             session.commit()
+
+    def upsert_saved_offer(
+        self,
+        page_id: str,
+        country: str,
+        page_name: str,
+        status: str = "Para modelar",
+        notes: str = "",
+        fb_page_url: str | None = None,
+        checkout_url: str | None = None,
+    ) -> None:
+        """Guarda o actualiza una oferta/página en Favoritos."""
+        now = utc_now()
+        country_upper = country.upper()
+        with self._session_factory() as session:
+            stmt = select(SavedOfferORM).where(
+                SavedOfferORM.page_id == page_id,
+                SavedOfferORM.country == country_upper,
+            )
+            existing = session.scalar(stmt)
+            if existing is None:
+                session.add(
+                    SavedOfferORM(
+                        page_id=page_id,
+                        country=country_upper,
+                        page_name=page_name,
+                        status=status,
+                        notes=notes,
+                        fb_page_url=fb_page_url,
+                        checkout_url=checkout_url,
+                        saved_at=now,
+                        updated_at=now,
+                    )
+                )
+            else:
+                existing.page_name = page_name
+                existing.status = status
+                existing.notes = notes
+                if fb_page_url:
+                    existing.fb_page_url = fb_page_url
+                if checkout_url:
+                    existing.checkout_url = checkout_url
+                existing.updated_at = now
+            session.commit()
+
+    def list_saved_offers(self, status: str | None = None) -> list[dict]:
+        """Lista las ofertas guardadas en Favoritos ordenadas por última actualización."""
+        with self._session_factory() as session:
+            stmt = select(SavedOfferORM)
+            if status:
+                stmt = stmt.where(SavedOfferORM.status == status)
+            stmt = stmt.order_by(SavedOfferORM.updated_at.desc())
+            rows = session.scalars(stmt).all()
+            return [
+                {
+                    "id": r.id,
+                    "page_id": r.page_id,
+                    "country": r.country,
+                    "page_name": r.page_name,
+                    "status": r.status,
+                    "notes": r.notes,
+                    "fb_page_url": r.fb_page_url,
+                    "checkout_url": r.checkout_url,
+                    "saved_at": _ensure_utc(r.saved_at),
+                    "updated_at": _ensure_utc(r.updated_at),
+                }
+                for r in rows
+            ]
+
+    def delete_saved_offer(self, page_id: str, country: str) -> None:
+        """Elimina una oferta guardada de Favoritos."""
+        with self._session_factory() as session:
+            stmt = select(SavedOfferORM).where(
+                SavedOfferORM.page_id == page_id,
+                SavedOfferORM.country == country.upper(),
+            )
+            existing = session.scalar(stmt)
+            if existing is not None:
+                session.delete(existing)
+                session.commit()

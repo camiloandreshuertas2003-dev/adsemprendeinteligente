@@ -1,0 +1,27 @@
+# Configuración de mercado: Perú (es-PE)
+code: peru
+name: Perú
+country: PE
+language: es-PE
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - guía completa
+  - plantilla
+  - método
+  - curso online
+  - descarga inmediata
+  - manual
+  - whop
+
+checkout_domains:
+  - hotmart.com
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - whop.com
+  - systeme.io
+  - stripe.com
+  - api.whatsapp.com

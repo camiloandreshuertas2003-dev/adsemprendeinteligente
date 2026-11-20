@@ -1,0 +1,28 @@
+# Configuración de mercado: Argentina (es-AR)
+code: argentina
+name: Argentina
+country: AR
+language: es-AR
+
+keywords:
+  - ebook
+  - e-book
+  - PDF
+  - guía práctica
+  - plantilla
+  - método
+  - curso online
+  - descarga inmediata
+  - recetario
+  - whop
+
+checkout_domains:
+  - hotmart.com
+  - tiendanube.com
+  - gumroad.com
+  - payhip.com
+  - stan.store
+  - whop.com
+  - systeme.io
+  - stripe.com
+  - api.whatsapp.com

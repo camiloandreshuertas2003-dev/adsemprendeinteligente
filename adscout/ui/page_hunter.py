@@ -22,17 +22,57 @@ MEDIA_PRESETS: dict[str, str] = {
     "Solo imágenes": "image",
 }
 
+PRO_COMBOS_PRESET: list[str] = [
+    "pdf | api.whatsapp.com",
+    "ebook | api.whatsapp.com",
+    "pdf | wa.me",
+    "guia | api.whatsapp.com",
+    "pdf | hotmart.com",
+    "ebook | hotmart.com",
+    "pdf | kiwify.com.br",
+    "ebook | kiwify.com.br",
+    "pdf | stan.store",
+    "pdf | gumroad.com",
+    "pdf | payhip.com",
+    "ebook | whop.com",
+]
+
+COMBO_PRODUCTS: list[str] = [
+    "pdf",
+    "ebook",
+    "guia",
+    "plantilla",
+    "recetario",
+    "metodo",
+    "workbook",
+    "curso online",
+]
+
+COMBO_CHANNELS: list[str] = [
+    "api.whatsapp.com",
+    "wa.me",
+    "hotmart.com",
+    "pay.hotmart.com",
+    "kiwify.com.br",
+    "stan.store",
+    "gumroad.com",
+    "payhip.com",
+    "whop.com",
+    "systeme.io",
+    "digistore24.com",
+]
+
 
 def render_hunter_page(ctx: AppContext, active_market: MarketConfig) -> None:
     st.header("🎯 Cazador Rápido — Meta Ad Library Multi-País")
     st.caption(
-        "Genera enlaces directos ya filtrados a la Biblioteca de Anuncios de Facebook para cazar "
-        "ebooks, PDFs, plantillas y pasarelas de pago en varios mercados a la vez (costo $0)."
+        "Genera enlaces directos ya filtrados a la Biblioteca de Anuncios de Facebook — incluyendo "
+        "combos booleanos con `|` como `pdf | api.whatsapp.com` — para cazar ebooks y PDFs en varios países (costo $0)."
     )
 
     all_codes = list(ctx.markets.keys())
     default_selected = [active_market.code]
-    for extra in ("usa", "brasil", "espana", "francia"):
+    for extra in ("usa", "chile", "peru", "argentina", "colombia"):
         if extra in all_codes and extra not in default_selected and len(default_selected) < 3:
             default_selected.append(extra)
 
@@ -60,20 +100,35 @@ def render_hunter_page(ctx: AppContext, active_market: MarketConfig) -> None:
         media_type = MEDIA_PRESETS[media_label]
 
     mode = st.radio(
-        "¿Qué quieres cazar hoy?",
+        "Modo de caza en Meta Ad Library",
         options=[
-            "📚 Ebooks, PDFs y Productos Digitales (keywords nativas)",
-            "💳 Pasarelas de Checkout (Hotmart, Kiwify, Stan, Whop, Gumroad...)",
-            "🔎 Búsqueda personalizada (nicho o término propio)",
+            "🔥 Combos Pro con operador | (ej: pdf | api.whatsapp.com)",
+            "📚 Keywords nativas de Ebooks y PDFs",
+            "💳 Pasarelas de Checkout (Hotmart, Kiwify, Stan, Whop...)",
+            "🔎 Búsqueda personalizada (término o combo propio)",
         ],
-        horizontal=True,
+        horizontal=False,
     )
 
     custom_queries: list[str] = []
-    if mode.startswith("🔎"):
+    if mode.startswith("🔥"):
+        with st.container(border=True):
+            st.markdown("**⚡ Constructor rápido de Combo (`Producto | Canal / Checkout`)**")
+            cc1, cc2, cc3 = st.columns([1.4, 1.6, 1.4])
+            with cc1:
+                chosen_prod = st.selectbox("Producto digital", options=COMBO_PRODUCTS, index=0)
+            with cc2:
+                chosen_chan = st.selectbox("Canal o Pasarela", options=COMBO_CHANNELS, index=0)
+            built_combo = f"{chosen_prod} | {chosen_chan}"
+            with cc3:
+                st.write("")
+                st.code(built_combo, language=None)
+            custom_queries = [built_combo] + [c for c in PRO_COMBOS_PRESET if c != built_combo]
+
+    elif mode.startswith("🔎"):
         raw_custom = st.text_input(
-            "Escribe uno o varios términos separados por coma (ej: recetas pdf, pilates ebook, trading guide, hotmart.com)",
-            value="ebook, pdf",
+            "Escribe uno o varios términos/combos separados por coma (ej: pdf | api.whatsapp.com, recetas pdf | hotmart.com)",
+            value="pdf | api.whatsapp.com, ebook | hotmart.com",
         )
         custom_queries = [q.strip() for q in raw_custom.split(",") if q.strip()]
 
@@ -83,12 +138,14 @@ def render_hunter_page(ctx: AppContext, active_market: MarketConfig) -> None:
 
     st.divider()
 
-    # Botones rápidos por país (los primeros 4 términos) + tabla completa clicable
     table_rows: list[dict[str, str]] = []
 
     for code in selected_codes:
         mkt = ctx.markets[code]
-        if mode.startswith("📚"):
+        if mode.startswith("🔥"):
+            terms = custom_queries
+            category_label = "Combo Pro (|)"
+        elif mode.startswith("📚"):
             terms = mkt.keywords
             category_label = "Keyword digital"
         elif mode.startswith("💳"):
@@ -134,7 +191,7 @@ def render_hunter_page(ctx: AppContext, active_market: MarketConfig) -> None:
                     {
                         "País": f"{mkt.name} ({mkt.country})",
                         "Tipo": category_label,
-                        "Término / Pasarela": term,
+                        "Búsqueda en Meta": term,
                         "Antigüedad": f"≥ {min_days} días" if min_days > 0 else "Todos activos",
                         "Abrir en Meta Ad Library": url,
                     }
@@ -154,8 +211,14 @@ def render_hunter_page(ctx: AppContext, active_market: MarketConfig) -> None:
                 ),
             },
         )
-        st.info(
-            "💡 **Tip rápido:** Cuando encuentres anuncios ganadores en Facebook, expórtalos a CSV/JSON "
-            "(o usa Apify) e impórtalos en **📥 Mercado e Ingesta** para puntuarlos, agruparlos por página "
-            "y seguir cuántos días siguen activos."
+
+    with st.expander("🧩 Cómo usar extensiones de Chrome a tu favor con AdScout (flujo de 2 minutos)"):
+        st.markdown(
+            """
+            Puedes multiplicar tu velocidad combinando los enlaces de arriba con extensiones gratuitas de Chrome:
+            1. **Abre un enlace de arriba** (por ejemplo `pdf | api.whatsapp.com` en Brasil, Chile o Perú).
+            2. **Filtra visualmente en Facebook** con extensiones de Chrome como **Ad Library Helper / Foreplay / Meta Ad Library Filter** (te permiten filtrar en vivo por cantidad de anuncios activos de la misma página, ej. ≥ 5 anuncios).
+            3. **Exporta a CSV/JSON en 1 clic** con **Instant Data Scraper** o un **Ad Library Exporter** de Chrome.
+            4. **Sube ese CSV/JSON** en **📥 Mercado e Ingesta** → AdScout lo deduplica, puntúa (0–100), agrupa por anunciante en **🚀 Ofertas Escalando** y lo guarda permanentemente en tu base de datos **Supabase**.
+            """
         )
