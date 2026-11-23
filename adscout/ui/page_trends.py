@@ -20,7 +20,7 @@ def render_trends_page(ctx: AppContext, market: MarketConfig) -> None:
 
     ads = ctx.repository.list_ads(country=market.country, only_active=False)
     if not ads:
-        st.info("No hay anuncios registrados todavía. Importa un archivo en la página **Mercado**.")
+        st.info("No hay anuncios registrados todavía. Importa un archivo en la pestaña **📥 Importar Anuncios**.")
         return
 
     analyses = ctx.repository.list_all_analyses(ad_ids=[ad.ad_id for ad in ads])

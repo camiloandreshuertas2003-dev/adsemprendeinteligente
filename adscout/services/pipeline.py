@@ -103,7 +103,8 @@ class IngestionPipeline:
                     "fb_page_url": build_ad_library_page_url(
                         page_id=ad.page_id,
                         page_name=ad.page_name,
-                        country=ad.country or market.country,
+                        country="ALL",
+                        sort_by_impressions=True,
                     ),
                 }
             )

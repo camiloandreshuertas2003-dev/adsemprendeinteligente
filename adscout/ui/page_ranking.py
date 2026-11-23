@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from adscout.models.market import MarketConfig
+from adscout.services.meta_links import is_real_meta_id
 from adscout.ui.context import AppContext
 
 
@@ -34,8 +35,8 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
 
     if not ranked_items:
         st.info(
-            "No hay anuncios cargados todavía. "
-            "Ve a **📥 Mercado e Ingesta** para importar datos (o prueba en 1 clic con `brasil_ads_sample.csv`)."
+            "No hay anuncios importados todavía. "
+            "Ve a **4. 📥 Importar y Tendencias** para subir un CSV/JSON (o cargar los datos de ejemplo en 1 clic)."
         )
         return
 
@@ -99,16 +100,30 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
         st.warning("Ningún anuncio coincide con los filtros actuales.")
         return
 
+    demo_count = sum(
+        1 for i in filtered if not is_real_meta_id(i["ad"].page_id) and not is_real_meta_id(i["ad"].ad_id)
+    )
+    if demo_count > 0:
+        st.warning(
+            f"⚠️ Hay **{demo_count} anuncios ficticios de demostración** en esta tabla (de `brasil_ads_sample.csv`). "
+            "Sus enlaces no existen en Facebook ni en Hotmart."
+        )
+        if st.button("🗑️ Eliminar datos ficticios de demostración", key="ranking_delete_demo_btn"):
+            removed = ctx.repository.delete_demo_ads()
+            st.success(f"Se eliminaron {removed} anuncios de demostración.")
+            st.rerun()
+
     rows = []
     for item in filtered:
         ad = item["ad"]
         score = item["score"]
         comp = score.as_dict()
+        is_demo_ad = not is_real_meta_id(ad.page_id) and not is_real_meta_id(ad.ad_id)
         rows.append(
             {
                 "Puntaje": score.total_score,
                 "País": ad.country,
-                "Página": ad.page_name,
+                "Página": f"[DEMO] {ad.page_name}" if is_demo_ad else ad.page_name,
                 "Nicho": item["nicho"],
                 "Titular": ad.headline or "(sin titular)",
                 "Checkout": item["matched_checkout"] or "-",
@@ -117,9 +132,9 @@ def render_ranking_page(ctx: AppContext, market: MarketConfig) -> None:
                 "Variantes": ad.variants_count,
                 "Anuncios activos pág.": item["page_active_ads"],
                 "Activo": ad.is_active,
-                "FB Anuncio": item["fb_ad_url"],
-                "FB Página": item["fb_page_url"],
-                "Checkout / Web": ad.link_url,
+                "FB Anuncio": None if is_demo_ad else item["fb_ad_url"],
+                "FB Página": None if is_demo_ad else item["fb_page_url"],
+                "Checkout / Web": None if is_demo_ad else ad.link_url,
                 "ad_id": ad.ad_id,
                 "pts_dias": comp["days_active"].points,
                 "pts_variantes": comp["variants_count"].points,

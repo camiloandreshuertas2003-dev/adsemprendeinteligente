@@ -6,10 +6,33 @@ import pandas as pd
 import streamlit as st
 
 from adscout.models.market import MarketConfig
+from adscout.services.meta_links import build_ad_library_page_url, is_real_meta_id
 from adscout.services.pipeline import build_scaling_offers
 from adscout.ui.context import AppContext
+from adscout.ui.page_ranking import render_ranking_page
 
 FAVORITE_STATUSES = ["Para modelar", "En revisión", "Modelado", "Descartado"]
+
+
+def render_winners_hub_page(ctx: AppContext, active_market: MarketConfig) -> None:
+    """Vista unificada de Ganadores: Ofertas Escalando, Ranking de Anuncios y Favoritos."""
+    st.header("🏆 Ganadores y Favoritos")
+    st.caption(
+        "Detecta anunciantes que están escalando, compara el ranking (0–100) y gestiona tus páginas guardadas."
+    )
+
+    tab_offers, tab_ranking, tab_favs = st.tabs(
+        ["🚀 Ofertas Escalando", "🏆 Ranking de Anuncios", "⭐ Mis Favoritos"]
+    )
+
+    with tab_offers:
+        _render_scaling_tab(ctx, active_market)
+
+    with tab_ranking:
+        render_ranking_page(ctx, active_market)
+
+    with tab_favs:
+        _render_favorites_tab(ctx)
 
 
 def render_offers_page(ctx: AppContext, active_market: MarketConfig) -> None:
@@ -45,10 +68,24 @@ def _render_scaling_tab(ctx: AppContext, active_market: MarketConfig) -> None:
 
     if not ranked_items:
         st.info(
-            "Aún no hay anuncios cargados. Ve a **📥 Mercado e Ingesta** para importar datos "
-            "(o prueba con el archivo de ejemplo `brasil_ads_sample.csv`)."
+            "Aún no hay anuncios reales importados. Usa **1. 🔎 Buscar y Espiar** para abrir Meta Ad Library "
+            "en vivo con filtros exactos, o sube un CSV/JSON real en **4. 📥 Importar y Tendencias**."
         )
         return
+
+    demo_count = sum(
+        1 for i in ranked_items if not is_real_meta_id(i["ad"].page_id) and not is_real_meta_id(i["ad"].ad_id)
+    )
+    if demo_count > 0:
+        st.warning(
+            f"⚠️ Detecté **{demo_count} anuncios ficticios de demostración** (de `brasil_ads_sample.csv`). "
+            "Esos registros son solo de prueba y sus enlaces de Facebook/Hotmart **no existen realmente**. "
+            "Para ver anuncios y enlaces 100% reales, usa **1. 🔎 Buscar y Espiar** o importa un CSV/JSON real de Meta Ad Library."
+        )
+        if st.button("🗑️ Eliminar datos ficticios de demostración", key="offers_delete_demo_btn"):
+            removed = ctx.repository.delete_demo_ads()
+            st.success(f"Se eliminaron {removed} anuncios de demostración.")
+            st.rerun()
 
     offers = build_scaling_offers(ranked_items)
 
@@ -94,43 +131,50 @@ def _render_scaling_tab(ctx: AppContext, active_market: MarketConfig) -> None:
     top_n = filtered[:3]
     cards = st.columns(len(top_n))
     for idx, offer in enumerate(top_n):
+        is_demo_offer = not is_real_meta_id(offer["page_id"])
         with cards[idx]:
             with st.container(border=True):
-                st.markdown(f"**{offer['signal']}** · `{offer['country']}`")
+                badge = "🧪 [DEMO]" if is_demo_offer else f"**{offer['signal']}**"
+                st.markdown(f"{badge} · `{offer['country']}`")
                 st.markdown(f"#### {offer['page_name']}")
                 st.caption(offer["top_headline"])
                 st.write(
                     f"**{offer['active_ads']}** activos · **{offer['max_days_active']}d** máx · "
                     f"**{offer['max_score']:.1f}** pts · Checkout: `{offer['checkouts']}`"
                 )
-                b1, b2 = st.columns(2)
-                with b1:
-                    st.link_button("Espiar Página FB ↗", offer["fb_page_url"], use_container_width=True)
-                with b2:
-                    if offer["top_link_url"]:
-                        st.link_button("Ver Checkout ↗", offer["top_link_url"], use_container_width=True)
-                    else:
-                        st.link_button("Ver Anuncio FB ↗", offer["fb_top_ad_url"], use_container_width=True)
+                if is_demo_offer:
+                    st.caption("Registro de ejemplo (sin enlace real en Meta).")
+                else:
+                    b1, b2 = st.columns(2)
+                    with b1:
+                        st.link_button("Espiar Página FB ↗", offer["fb_page_url"], use_container_width=True)
+                    with b2:
+                        if offer["top_link_url"]:
+                            st.link_button("Ver Checkout ↗", offer["top_link_url"], use_container_width=True)
+                        else:
+                            st.link_button("Ver Anuncio FB ↗", offer["fb_top_ad_url"], use_container_width=True)
 
     st.divider()
     st.subheader("Tabla completa de ofertas agrupadas por anunciante")
 
-    rows = [
-        {
-            "Señal": o["signal"],
-            "Página / Anunciante": o["page_name"],
-            "País": o["country"],
-            "Puntaje máx.": o["max_score"],
-            "Anuncios activos": o["active_ads"],
-            "Variantes totales": o["total_variants"],
-            "Máx. días activo": o["max_days_active"],
-            "Checkout": o["checkouts"],
-            "Espiar Página (FB)": o["fb_page_url"],
-            "Mejor Anuncio (FB)": o["fb_top_ad_url"],
-            "Página de Ventas": o["top_link_url"],
-        }
-        for o in filtered
-    ]
+    rows = []
+    for o in filtered:
+        is_demo_offer = not is_real_meta_id(o["page_id"])
+        rows.append(
+            {
+                "Señal": "🧪 DEMO" if is_demo_offer else o["signal"],
+                "Página / Anunciante": f"[DEMO] {o['page_name']}" if is_demo_offer else o["page_name"],
+                "País": o["country"],
+                "Puntaje máx.": o["max_score"],
+                "Anuncios activos": o["active_ads"],
+                "Variantes totales": o["total_variants"],
+                "Máx. días activo": o["max_days_active"],
+                "Checkout": o["checkouts"],
+                "Espiar Página (FB)": None if is_demo_offer else o["fb_page_url"],
+                "Mejor Anuncio (FB)": None if is_demo_offer else o["fb_top_ad_url"],
+                "Página de Ventas": None if is_demo_offer else o["top_link_url"],
+            }
+        )
 
     df = pd.DataFrame(rows)
     st.dataframe(
@@ -212,8 +256,9 @@ def _render_favorites_tab(ctx: AppContext) -> None:
 
     if not saved:
         st.info(
-            "Todavía no tienes ofertas guardadas en Favoritos. "
-            "Ve a la pestaña **🚀 Ofertas Escalando** y guarda cualquier anunciante ganador."
+            "Todavía no tienes páginas guardadas en Favoritos. "
+            "Puedes guardar cualquier página desde **1. 🔎 Buscar y Espiar** (pestaña Espiar Página) "
+            "o desde **🚀 Ofertas Escalando**."
         )
         return
 
@@ -224,7 +269,12 @@ def _render_favorites_tab(ctx: AppContext) -> None:
                 "Página / Anunciante": s["page_name"],
                 "País": s["country"],
                 "Notas": s["notes"] or "-",
-                "Espiar Página (FB)": s["fb_page_url"],
+                "Espiar Página (FB)": build_ad_library_page_url(
+                    page_id=s["page_id"],
+                    page_name=s["page_name"],
+                    country=s["country"] or "ALL",
+                    sort_by_impressions=True,
+                ),
                 "Checkout / Web": s["checkout_url"],
                 "Actualizado": str(s["updated_at"].date()),
             }

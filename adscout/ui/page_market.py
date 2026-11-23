@@ -71,13 +71,20 @@ def render_market_page(ctx: AppContext, market: MarketConfig) -> None:
         )
         import_mode = st.radio(
             "Origen del archivo",
-            options=["Usar datos de ejemplo (/sample_data)", "Subir archivo CSV o JSON"],
+            options=[
+                "Subir archivo CSV o JSON real (exportado de Meta Ad Library / Apify)",
+                "Usar datos ficticios de demostración (solo prueba, enlaces NO reales)",
+            ],
             horizontal=True,
         )
-        if import_mode == "Usar datos de ejemplo (/sample_data)":
+        if import_mode.startswith("Usar datos ficticios"):
+            st.warning(
+                "⚠️ Los archivos en `/sample_data` contienen **anuncios ficticios de ejemplo** "
+                "(IDs como `br_1001` y `pg_fit_01`) para probar el sistema de puntaje; sus enlaces a Facebook y Hotmart **no son reales**."
+            )
             if sample_files:
                 selected_sample_path = st.selectbox(
-                    "Archivo de ejemplo",
+                    "Archivo de ejemplo ficticio",
                     options=sample_files,
                     format_func=lambda p: p.name,
                 )
@@ -85,7 +92,7 @@ def render_market_page(ctx: AppContext, market: MarketConfig) -> None:
                 st.warning("No se encontraron archivos en `/sample_data`.")
         else:
             uploaded_file = st.file_uploader(
-                "Sube un CSV o JSON exportado manualmente o desde Apify",
+                "Sube un CSV o JSON real exportado desde Meta Ad Library (Chrome / Apify)",
                 type=["csv", "json"],
             )
         filter_by_keywords = st.checkbox(

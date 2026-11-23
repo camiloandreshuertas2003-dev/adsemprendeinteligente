@@ -8,8 +8,7 @@ from adscout.ui.context import build_app_context
 from adscout.ui.page_detail import render_detail_page
 from adscout.ui.page_hunter import render_hunter_page
 from adscout.ui.page_market import render_market_page
-from adscout.ui.page_offers import render_offers_page
-from adscout.ui.page_ranking import render_ranking_page
+from adscout.ui.page_offers import render_winners_hub_page
 from adscout.ui.page_trends import render_trends_page
 
 
@@ -24,7 +23,7 @@ def main() -> None:
 
     with st.sidebar:
         st.title("🔎 AdScout")
-        st.caption("Cazador multi-mercado de ebooks, PDFs y productos digitales en Meta Ad Library")
+        st.caption("Encuentra y espía productos digitales ganadores en Meta Ad Library")
 
         if not ctx.markets:
             st.error(
@@ -36,46 +35,44 @@ def main() -> None:
         market_codes = list(ctx.markets.keys())
         default_idx = market_codes.index("brasil") if "brasil" in market_codes else 0
         selected_code = st.selectbox(
-            "País / Mercado principal",
+            "País principal",
             options=market_codes,
             index=default_idx,
-            format_func=lambda code: f"{ctx.markets[code].name} ({ctx.markets[code].country} · {ctx.markets[code].language})",
+            format_func=lambda code: f"{ctx.markets[code].name} ({ctx.markets[code].country})",
         )
         active_market = ctx.markets[selected_code]
 
         page = st.radio(
-            "Navegación",
+            "¿Qué quieres hacer?",
             options=[
-                "🎯 Cazador Rápido (Meta)",
-                "🏆 Ranking de Ganadores",
-                "🚀 Ofertas Escalando",
-                "🔍 Detalle y Análisis IA",
-                "📥 Mercado e Ingesta",
-                "📈 Tendencias",
+                "1. 🔎 Buscar y Espiar",
+                "2. 🏆 Ganadores y Favoritos",
+                "3. ✨ Analizar con IA",
+                "4. 📥 Importar y Tendencias",
             ],
         )
 
         st.divider()
-        is_pg = ctx.db_backend == "postgresql"
-        st.caption(f"Mercados activos: **{len(ctx.markets)} países**")
-        st.caption(f"Base de datos: **{'🟢 Supabase (PostgreSQL)' if is_pg else '🟡 SQLite local/temp'}**")
-        st.caption("Estado de módulos opcionales")
-        st.write(f"- Gemini: {'✅ Configurado' if ctx.gemini.is_configured() else '⚪ Inactivo (sin clave)'}")
-        st.write(f"- Perplexity: {'✅ Configurado' if ctx.perplexity.is_configured() else '⚪ Inactivo (sin clave)'}")
-        st.write(f"- Cuota LLM hoy: `{ctx.limiter.used_today()} / {ctx.limiter.daily_limit}`")
+        with st.expander("⚙️ Estado del sistema", expanded=False):
+            is_pg = ctx.db_backend == "postgresql"
+            st.caption(f"Mercados activos: **{len(ctx.markets)} países**")
+            st.caption(f"Base de datos: **{'🟢 Supabase (PostgreSQL)' if is_pg else '🟡 SQLite local/temp'}**")
+            st.caption(f"Gemini: {'✅ Activo' if ctx.gemini.is_configured() else '⚪ Sin clave'}")
+            st.caption(f"Perplexity: {'✅ Activo' if ctx.perplexity.is_configured() else '⚪ Sin clave'}")
+            st.caption(f"Cuota IA hoy: `{ctx.limiter.used_today()} / {ctx.limiter.daily_limit}`")
 
-    if page == "🎯 Cazador Rápido (Meta)":
+    if page == "1. 🔎 Buscar y Espiar":
         render_hunter_page(ctx, active_market)
-    elif page == "🏆 Ranking de Ganadores":
-        render_ranking_page(ctx, active_market)
-    elif page == "🚀 Ofertas Escalando":
-        render_offers_page(ctx, active_market)
-    elif page == "🔍 Detalle y Análisis IA":
+    elif page == "2. 🏆 Ganadores y Favoritos":
+        render_winners_hub_page(ctx, active_market)
+    elif page == "3. ✨ Analizar con IA":
         render_detail_page(ctx, active_market)
-    elif page == "📥 Mercado e Ingesta":
-        render_market_page(ctx, active_market)
-    elif page == "📈 Tendencias":
-        render_trends_page(ctx, active_market)
+    elif page == "4. 📥 Importar y Tendencias":
+        tab_import, tab_trends = st.tabs(["📥 Importar Anuncios", "📈 Tendencias de Nichos"])
+        with tab_import:
+            render_market_page(ctx, active_market)
+        with tab_trends:
+            render_trends_page(ctx, active_market)
 
 
 if __name__ == "__main__":

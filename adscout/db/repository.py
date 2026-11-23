@@ -495,3 +495,18 @@ class AdRepository:
             if existing is not None:
                 session.delete(existing)
                 session.commit()
+
+    def delete_demo_ads(self) -> int:
+        """Elimina anuncios ficticios de demostración (IDs no numéricos como br_1001 / pg_fit_01)."""
+        deleted = 0
+        with self._session_factory() as session:
+            rows = session.scalars(select(AdORM)).all()
+            for row in rows:
+                ad_is_numeric = row.ad_id.strip().isdigit() and len(row.ad_id.strip()) >= 5
+                page_is_numeric = row.page_id.strip().isdigit() and len(row.page_id.strip()) >= 5
+                if not ad_is_numeric and not page_is_numeric:
+                    session.delete(row)
+                    deleted += 1
+            if deleted > 0:
+                session.commit()
+        return deleted

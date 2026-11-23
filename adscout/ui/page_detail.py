@@ -12,7 +12,10 @@ from adscout.ui.context import AppContext
 
 def _render_tropicalizer_box(ctx: AppContext, market: MarketConfig) -> None:
     """Herramienta rápida con Gemini para traducir y tropicalizar cualquier anuncio al español."""
-    with st.expander("✨ Tropicalizador Rápido con Gemini (pega cualquier anuncio de FB y crea tu plan de PDF/Ebook)", expanded=False):
+    with st.expander(
+        "✨ Tropicalizador Rápido con Gemini (pega cualquier anuncio de FB y crea tu plan de PDF/Ebook)",
+        expanded=True,
+    ):
         st.caption(
             "¿Viste un anuncio ganador en Brasil, USA, Francia o Alemania? Pega aquí el texto o titular "
             "y Gemini te entrega traducción, estructura del PDF, bonos y 3 hooks listos en español."
@@ -61,15 +64,15 @@ def _render_tropicalizer_box(ctx: AppContext, market: MarketConfig) -> None:
 
 
 def render_detail_page(ctx: AppContext, market: MarketConfig) -> None:
-    st.header(f"Detalle de Producto / Página — {market.name} ({market.country})")
+    st.header(f"✨ Analizar y Adaptar con IA — {market.name} ({market.country})")
 
     _render_tropicalizer_box(ctx, market)
 
     ranked_items = ctx.pipeline.get_ranked_ads(market=market, only_active=False)
     if not ranked_items:
         st.info(
-            "No hay anuncios cargados todavía en este mercado. Importa datos en **📥 Mercado e Ingesta** "
-            "o usa el **✨ Tropicalizador Rápido** arriba pegando cualquier anuncio de Facebook."
+            "Para analizar anuncios importados por página, sube un archivo en **4. 📥 Importar y Tendencias**. "
+            "Mientras tanto, puedes pegar cualquier anuncio de Facebook arriba en el **✨ Tropicalizador Rápido**."
         )
         return
 

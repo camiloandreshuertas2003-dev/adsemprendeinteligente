@@ -10,6 +10,7 @@ from typing import Any
 
 from adscout.models.ad import Ad, extract_domain, normalize_platforms, parse_date, parse_datetime, utc_now
 from adscout.models.market import MarketConfig
+from adscout.services.meta_links import extract_page_id, is_real_meta_id
 from adscout.sources.base import AdSource, SourceConfigError, SourceError
 
 logger = logging.getLogger("adscout.sources.csv_import")
@@ -86,7 +87,19 @@ def normalize_raw_record(record: dict[str, Any], market_config: MarketConfig) ->
     if not ad_id:
         raise ValueError("El registro no contiene un identificador de anuncio (ad_id / adArchiveID / id).")
 
-    page_id = _pick_first(record, ("page_id", "pageID", "pageId")) or snap.get("page_id") or "unknown_page"
+    raw_page_id = (
+        _pick_first(record, ("page_id", "pageID", "pageId", "view_all_page_id"))
+        or snap.get("page_id")
+        or snap.get("pageID")
+    )
+    if not is_real_meta_id(str(raw_page_id) if raw_page_id else None):
+        for url_key in ("page_url", "pageUrl", "ad_library_url", "library_url", "snapshot_url", "ad_snapshot_url", "url"):
+            candidate_url = record.get(url_key) or snap.get(url_key)
+            extracted_pid = extract_page_id(str(candidate_url) if candidate_url else None)
+            if extracted_pid:
+                raw_page_id = extracted_pid
+                break
+    page_id = raw_page_id or "unknown_page"
     page_name = (
         _pick_first(record, ("page_name", "pageName", "advertiser", "page"))
         or snap.get("page_name")
