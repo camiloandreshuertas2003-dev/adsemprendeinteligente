@@ -55,6 +55,8 @@ def main() -> None:
         st.divider()
         with st.expander("⚙️ Estado del sistema", expanded=False):
             is_pg = ctx.db_backend == "postgresql"
+            apify_ok = bool(ctx.settings.apify_api_token or st.session_state.get("session_apify_token"))
+            st.caption(f"Apify (Búsqueda auto): **{'✅ Conectado' if apify_ok else '⚪ Sin clave'}**")
             st.caption(f"Mercados activos: **{len(ctx.markets)} países**")
             st.caption(f"Base de datos: **{'🟢 Supabase (PostgreSQL)' if is_pg else '🟡 SQLite local/temp'}**")
             st.caption(f"Gemini: {'✅ Activo' if ctx.gemini.is_configured() else '⚪ Sin clave'}")

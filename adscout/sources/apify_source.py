@@ -9,12 +9,12 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any, Callable
-from urllib.parse import quote_plus
 
 import httpx
 
 from adscout.models.ad import Ad
 from adscout.models.market import MarketConfig
+from adscout.services.meta_links import build_ad_library_search_url
 from adscout.sources.base import (
     AdSource,
     InvalidTokenError,
@@ -31,11 +31,10 @@ class ApifySource(AdSource):
     """[FUENTE DE PAGO OPCIONAL] Ejecuta un actor de Apify y normaliza los resultados a Ad."""
 
     name = "apify"
-    label = "Apify Actor Scraper (Fuente de pago opcional)"
+    label = "Apify Actor Scraper (Automático — Plan gratis $5/mes)"
     description = (
-        "Fuente de pago opcional. Ejecuta un actor de Apify configurado por APIFY_ACTOR_ID "
-        "y APIFY_API_TOKEN en .env para recolectar anuncios públicos de la Biblioteca de Meta "
-        "en cualquier país y normalizarlos al esquema Ad."
+        "Ejecuta el actor de Apify (`apify~facebook-ads-scraper`) para extraer anuncios 100% reales "
+        "de la Biblioteca de Meta en cualquier país con IDs reales de página y anuncio."
     )
     is_paid = True
 
@@ -43,33 +42,51 @@ class ApifySource(AdSource):
         self,
         api_token: str | None = None,
         actor_id: str = "apify~facebook-ads-scraper",
-        timeout_seconds: float = 120.0,
-        max_retries: int = 3,
+        timeout_seconds: float = 180.0,
+        max_retries: int = 2,
         base_backoff_seconds: float = 2.0,
+        custom_urls: list[str] | None = None,
+        media_type: str = "all",
+        min_days_active: int = 0,
+        exact_phrase: bool = False,
+        sort_by_impressions: bool = True,
         transport: httpx.BaseTransport | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         self.api_token = (api_token or "").strip()
-        self.actor_id = actor_id.strip() or "apify~facebook-ads-scraper"
+        raw_actor = (actor_id or "apify~facebook-ads-scraper").strip()
+        self.actor_id = raw_actor.replace("/", "~")
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
         self.base_backoff_seconds = base_backoff_seconds
+        self.custom_urls = [u.strip() for u in (custom_urls or []) if u and u.strip()]
+        self.media_type = media_type
+        self.min_days_active = min_days_active
+        self.exact_phrase = exact_phrase
+        self.sort_by_impressions = sort_by_impressions
         self._transport = transport
         self._sleep = sleep_fn
 
     def _build_actor_input(self, market_config: MarketConfig, keywords: list[str], limit: int) -> dict[str, Any]:
         """Construye las URLs públicas de búsqueda en Meta Ad Library como entrada del actor."""
-        effective_keywords = [kw.strip() for kw in keywords if kw.strip()] or market_config.keywords
-        start_urls = [
-            {
-                "url": (
-                    "https://www.facebook.com/ads/library/"
-                    f"?active_status=active&ad_type=all&country={market_config.country}"
-                    f"&q={quote_plus(kw)}&search_type=keyword_unordered"
-                )
-            }
-            for kw in effective_keywords
-        ]
+        if self.custom_urls:
+            start_urls = [{"url": url} for url in self.custom_urls]
+        else:
+            effective_keywords = [kw.strip() for kw in keywords if kw.strip()] or market_config.keywords
+            start_urls = [
+                {
+                    "url": build_ad_library_search_url(
+                        query=kw,
+                        country=market_config.country,
+                        active_status="active",
+                        media_type=self.media_type,
+                        min_days_active=self.min_days_active,
+                        exact_phrase=self.exact_phrase,
+                        sort_by_impressions=self.sort_by_impressions,
+                    )
+                }
+                for kw in effective_keywords
+            ]
         return {
             "startUrls": start_urls,
             "resultsLimit": limit,
@@ -114,6 +131,11 @@ class ApifySource(AdSource):
                 if response.status_code in (401, 403):
                     raise InvalidTokenError(
                         "APIFY_API_TOKEN inválido o sin permisos para ejecutar el actor."
+                    )
+
+                if response.status_code == 402:
+                    raise RateLimitError(
+                        "Crédito mensual de Apify agotado (HTTP 402). Revisa tu consumo en console.apify.com."
                     )
 
                 if response.status_code in (429, 500, 502, 503, 504):
