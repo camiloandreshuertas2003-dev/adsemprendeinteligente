@@ -55,8 +55,8 @@ def _render_scaling_tab(ctx: AppContext, active_market: MarketConfig) -> None:
     scope = st.radio(
         "Alcance del análisis",
         options=[
-            f"Mercado actual: {active_market.name} ({active_market.country})",
-            "🌍 Radar Global (Todos los mercados)",
+            "🌍 Todos los perfiles (Global)",
+            f"Solo mercado actual: {active_market.name} ({active_market.country})",
         ],
         horizontal=True,
     )
@@ -210,6 +210,63 @@ def _render_scaling_tab(ctx: AppContext, active_market: MarketConfig) -> None:
         file_name="adscout_ofertas_escalando.csv",
         mime="text/csv",
     )
+
+    st.divider()
+    with st.container(border=True):
+        st.subheader("🗑️ Eliminar o limpiar perfiles")
+        unique_profiles: dict[str, str] = {}
+        for o in offers:
+            pid = o["page_id"]
+            if pid not in unique_profiles:
+                unique_profiles[pid] = f"{o['page_name']} (ID: {pid} · {o['active_ads']} activos)"
+
+        all_pids = list(unique_profiles.keys())
+        col_del1, col_del2 = st.columns(2)
+
+        with col_del1:
+            st.markdown("**Eliminar perfiles específicos**")
+            pids_to_delete = st.multiselect(
+                "Elige los perfiles que quieres borrar",
+                options=all_pids,
+                format_func=lambda pid: unique_profiles[pid],
+                key="offers_pids_to_delete",
+            )
+            if st.button(
+                "🗑️ Eliminar seleccionados",
+                disabled=not bool(pids_to_delete),
+                use_container_width=True,
+                key="offers_delete_selected_btn",
+            ):
+                total_removed = 0
+                for pid in pids_to_delete:
+                    total_removed += ctx.repository.delete_page_ads(pid)
+                st.success(f"Se eliminaron {len(pids_to_delete)} perfil(es) ({total_removed} anuncios).")
+                st.rerun()
+
+        with col_del2:
+            st.markdown("**Limpieza rápida: conservar SOLO mis perfiles ganadores**")
+            last_pid = st.session_state.get("active_competitor_page_id")
+            default_keep = [last_pid] if last_pid in all_pids else []
+            pids_to_keep = st.multiselect(
+                "Elige el o los perfiles que SÍ quieres conservar (el resto se borrará)",
+                options=all_pids,
+                default=default_keep,
+                format_func=lambda pid: unique_profiles[pid],
+                key="offers_pids_to_keep",
+            )
+            if st.button(
+                "🧹 Borrar todos los demás y dejar solo estos",
+                type="primary",
+                disabled=not bool(pids_to_keep),
+                use_container_width=True,
+                key="offers_keep_only_btn",
+            ):
+                removed = ctx.repository.delete_all_ads_except_pages(pids_to_keep)
+                st.success(
+                    f"¡Limpieza lista! Se borraron **{removed} anuncios** de otros perfiles "
+                    f"y se conservaron **{len(pids_to_keep)} perfil(es)**."
+                )
+                st.rerun()
 
     st.divider()
     st.subheader("⭐ Guardar una oferta en Favoritos")

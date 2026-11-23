@@ -510,3 +510,44 @@ class AdRepository:
             if deleted > 0:
                 session.commit()
         return deleted
+
+    def delete_page_ads(self, page_id: str) -> int:
+        """Elimina todos los anuncios (y sus análisis cacheados) de una página específica."""
+        deleted = 0
+        with self._session_factory() as session:
+            rows = session.scalars(select(AdORM).where(AdORM.page_id == page_id)).all()
+            ad_ids = [r.ad_id for r in rows]
+            if ad_ids:
+                analyses = session.scalars(
+                    select(AdAnalysisORM).where(AdAnalysisORM.ad_id.in_(ad_ids))
+                ).all()
+                for analysis in analyses:
+                    session.delete(analysis)
+            for row in rows:
+                session.delete(row)
+                deleted += 1
+            if deleted > 0:
+                session.commit()
+        return deleted
+
+    def delete_all_ads_except_pages(self, keep_page_ids: list[str]) -> int:
+        """Elimina todos los anuncios de la BD excepto los pertenecientes a `keep_page_ids`."""
+        keep_set = {pid.strip() for pid in keep_page_ids if pid and pid.strip()}
+        deleted = 0
+        with self._session_factory() as session:
+            rows = session.scalars(select(AdORM)).all()
+            to_delete_ids: list[str] = []
+            for row in rows:
+                if row.page_id not in keep_set:
+                    to_delete_ids.append(row.ad_id)
+                    session.delete(row)
+                    deleted += 1
+            if to_delete_ids:
+                analyses = session.scalars(
+                    select(AdAnalysisORM).where(AdAnalysisORM.ad_id.in_(to_delete_ids))
+                ).all()
+                for analysis in analyses:
+                    session.delete(analysis)
+            if deleted > 0:
+                session.commit()
+        return deleted
