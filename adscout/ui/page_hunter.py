@@ -14,7 +14,9 @@ from adscout.services.meta_links import (
     build_ad_library_ad_url,
     build_ad_library_page_url,
     extract_page_id,
+    extract_whatsapp_info,
     is_real_meta_id,
+    resolve_whatsapp_from_url,
 )
 from adscout.sources import (
     ApifySource,
@@ -279,6 +281,76 @@ def _render_xray_tab(ctx: AppContext, page_id: str | None, page_ads: list[Ad]) -
 
     # Mapa de embudo / checkouts reales
     url_counter = Counter(a.link_url for a in page_ads if a.link_url)
+
+    # Detección de WhatsApp (directo en links/copy + rastreador opcional en wa.link / landings)
+    wa_cache_key = f"wa_resolved_{page_id}"
+    resolved_by_url: dict[str, dict[str, str | None]] = st.session_state.setdefault(wa_cache_key, {})
+
+    wa_by_ad: dict[str, dict[str, str | None]] = {}
+    found_phones: dict[str, dict[str, str | None]] = {}
+    has_native_hidden = False
+
+    for ad in page_ads:
+        info = extract_whatsapp_info(
+            link_url=ad.link_url,
+            ad_text=ad.ad_text,
+            cta=ad.cta,
+            raw_json=ad.raw_json,
+        )
+        if not info["phone"] and ad.link_url and ad.link_url in resolved_by_url:
+            cached_info = resolved_by_url[ad.link_url]
+            if cached_info.get("phone"):
+                info = cached_info
+        wa_by_ad[ad.ad_id] = info
+        if info["phone"]:
+            found_phones.setdefault(info["phone"], info)
+        elif info["source"] == "native_hidden":
+            has_native_hidden = True
+
+    with st.container(border=True):
+        w_head1, w_head2 = st.columns([2.2, 1.4])
+        with w_head1:
+            st.markdown("### 📱 WhatsApp detectados en este perfil")
+        with w_head2:
+            unique_urls_to_probe = [u for u, _ in url_counter.most_common(10) if u not in resolved_by_url]
+            if unique_urls_to_probe:
+                if st.button(
+                    f"🔎 Rastrear WhatsApp en {len(unique_urls_to_probe)} links/landings",
+                    use_container_width=True,
+                    key=f"wa_probe_btn_{page_id}",
+                ):
+                    with st.spinner("Siguiendo redirecciones (wa.link, bit.ly) y escaneando landings..."):
+                        for u in unique_urls_to_probe:
+                            resolved_by_url[u] = resolve_whatsapp_from_url(u)
+                    st.rerun()
+
+        if found_phones:
+            for phone, info in found_phones.items():
+                p_col1, p_col2, p_col3 = st.columns([1.4, 2.2, 1.2])
+                with p_col1:
+                    st.markdown(f"**`{phone}`** _(vía {info.get('source')})_")
+                with p_col2:
+                    if info.get("prefilled_text"):
+                        st.caption(f"Mensaje prellenado: \"{info['prefilled_text'][:120]}\"")
+                    else:
+                        st.caption("Número extraído directamente del anuncio / destino.")
+                with p_col3:
+                    if info.get("wa_url"):
+                        st.link_button("💬 Abrir WhatsApp ↗", info["wa_url"], use_container_width=True)
+        else:
+            if has_native_hidden:
+                fb_about_url = f"https://www.facebook.com/{page_id}/about"
+                st.info(
+                    "🔒 Este perfil usa el **botón nativo de WhatsApp de Meta** (Click-to-WhatsApp), "
+                    "por lo que Facebook oculta el número en la Biblioteca de Anuncios. "
+                    f"Puedes revisar si lo tienen público en su página: [Ver Información de la Página en FB ↗]({fb_about_url})"
+                )
+            else:
+                st.caption(
+                    "No se detectó ningún enlace `wa.me` o `api.whatsapp.com` directo en los anuncios. "
+                    "Si mandan a una landing o acortador (`wa.link`), pulsa **🔎 Rastrear WhatsApp en links/landings** arriba."
+                )
+
     if url_counter:
         st.markdown("### 🔗 Embudo y Destinos (a dónde manda el tráfico)")
         funnel_rows = [
@@ -310,6 +382,13 @@ def _render_xray_tab(ctx: AppContext, page_id: str | None, page_ads: list[Ad]) -
     )
     ad_rows = []
     for ad in sorted_ads:
+        wa_info = wa_by_ad.get(ad.ad_id, {})
+        if wa_info.get("phone"):
+            wa_label = wa_info["phone"]
+        elif wa_info.get("source") == "native_hidden":
+            wa_label = "🔒 Nativo Meta"
+        else:
+            wa_label = "-"
         ad_rows.append(
             {
                 "Estado": "🟢 Activo" if ad.is_active else "⚪ Inactivo",
@@ -317,6 +396,7 @@ def _render_xray_tab(ctx: AppContext, page_id: str | None, page_ads: list[Ad]) -
                 "Variantes": ad.variants_count,
                 "Titular": ad.headline or "(sin titular)",
                 "Copy (extracto)": (ad.ad_text or "").replace("\n", " ")[:140] or "-",
+                "📱 WhatsApp": wa_label,
                 "Dominio": ad.link_domain or "-",
                 "Ver Anuncio (FB)": build_ad_library_ad_url(
                     ad_id=ad.ad_id,

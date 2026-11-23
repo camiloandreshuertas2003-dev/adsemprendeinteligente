@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
-from urllib.parse import parse_qs, urlencode, urlparse
+from typing import Any
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
+
+import httpx
 
 META_AD_LIBRARY_BASE = "https://www.facebook.com/ads/library/"
 
@@ -159,3 +162,190 @@ def build_ad_library_page_url(
         sort_by_impressions=sort_by_impressions,
         reference_date=reference_date,
     )
+
+
+def _clean_phone_digits(raw: str | None) -> str | None:
+    """Limpia un teléfono dejando solo dígitos (entre 8 y 15 dígitos)."""
+    if not raw:
+        return None
+    digits = re.sub(r"\D", "", str(raw))
+    if 8 <= len(digits) <= 15:
+        return digits
+    return None
+
+
+def _unwrap_facebook_redirect(url: str) -> str:
+    """Si la URL es un redirect l.facebook.com/l.php?u=..., extrae la URL real."""
+    try:
+        parsed = urlparse(url)
+        if parsed.hostname and "facebook.com" in parsed.hostname.lower() and parsed.path.startswith("/l.php"):
+            u_vals = parse_qs(parsed.query).get("u")
+            if u_vals and u_vals[0]:
+                return unquote(u_vals[0])
+    except Exception:
+        pass
+    return url
+
+
+def _extract_whatsapp_from_text_or_url(blob: str) -> tuple[str | None, str | None]:
+    """Busca `wa.me/<num>` o `whatsapp.com/send?phone=<num>` dentro de una URL o texto/HTML.
+
+    Devuelve `(digits, prefilled_text)`.
+    """
+    if not blob:
+        return None, None
+
+    # 1. api.whatsapp.com/send?phone=... o web.whatsapp.com/send?phone=...
+    for match in re.finditer(
+        r"https?://(?:api|web)\.whatsapp\.com/send\?[^\s\"'<>]+",
+        blob,
+        flags=re.IGNORECASE,
+    ):
+        raw_url = match.group(0).replace("&amp;", "&")
+        qs = parse_qs(urlparse(raw_url).query)
+        phone_vals = qs.get("phone") or []
+        digits = _clean_phone_digits(phone_vals[0]) if phone_vals else None
+        if digits:
+            text_vals = qs.get("text") or []
+            return digits, unquote(text_vals[0]) if text_vals else None
+
+    # 2. wa.me/<digits>
+    for match in re.finditer(
+        r"(?:https?://)?wa\.me/(\+?[0-9]{8,15})(?:\?([^\s\"'<>]+))?",
+        blob,
+        flags=re.IGNORECASE,
+    ):
+        digits = _clean_phone_digits(match.group(1))
+        if digits:
+            prefilled = None
+            if match.group(2):
+                qs = parse_qs(match.group(2).replace("&amp;", "&"))
+                if qs.get("text"):
+                    prefilled = unquote(qs["text"][0])
+            return digits, prefilled
+
+    return None, None
+
+
+def extract_whatsapp_info(
+    link_url: str | None = None,
+    ad_text: str = "",
+    cta: str = "",
+    raw_json: dict[str, Any] | None = None,
+) -> dict[str, str | None]:
+    """Extrae número de WhatsApp (si existe) desde el enlace, copy o metadatos del anuncio."""
+    candidates: list[str] = []
+    if link_url:
+        candidates.append(_unwrap_facebook_redirect(link_url.strip()))
+
+    if isinstance(raw_json, dict):
+        snap = raw_json.get("snapshot") if isinstance(raw_json.get("snapshot"), dict) else {}
+        for key in ("link_url", "linkUrl", "cta_link"):
+            val = raw_json.get(key) or snap.get(key)
+            if isinstance(val, str) and val.strip():
+                candidates.append(_unwrap_facebook_redirect(val.strip()))
+        cards = snap.get("cards")
+        if isinstance(cards, list):
+            for card in cards[:5]:
+                if isinstance(card, dict) and isinstance(card.get("link_url"), str):
+                    candidates.append(_unwrap_facebook_redirect(card["link_url"].strip()))
+
+    for url in candidates:
+        digits, prefilled = _extract_whatsapp_from_text_or_url(url)
+        if digits:
+            return {
+                "phone": f"+{digits}",
+                "wa_url": f"https://wa.me/{digits}",
+                "prefilled_text": prefilled,
+                "source": "link",
+            }
+
+    if ad_text:
+        digits, prefilled = _extract_whatsapp_from_text_or_url(ad_text)
+        if digits:
+            return {
+                "phone": f"+{digits}",
+                "wa_url": f"https://wa.me/{digits}",
+                "prefilled_text": prefilled,
+                "source": "copy",
+            }
+        # Teléfono internacional explícito en el copy (ej. +55 11 99999-9999 o +57 300 123 4567)
+        intl_match = re.search(r"\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{3,5}[\s.-]?\d{3,5}", ad_text)
+        if intl_match:
+            digits = _clean_phone_digits(intl_match.group(0))
+            if digits:
+                return {
+                    "phone": f"+{digits}",
+                    "wa_url": f"https://wa.me/{digits}",
+                    "prefilled_text": None,
+                    "source": "copy",
+                }
+
+    # Detectar si es un botón nativo de Meta Click-to-WhatsApp (donde Meta oculta el número)
+    cta_blob = f"{cta} {link_url or ''}".lower()
+    raw_cta_type = ""
+    if isinstance(raw_json, dict):
+        snap = raw_json.get("snapshot") if isinstance(raw_json.get("snapshot"), dict) else {}
+        raw_cta_type = str(raw_json.get("cta_type") or snap.get("cta_type") or "").upper()
+    if "WHATSAPP" in raw_cta_type or "whatsapp" in cta_blob or "wa.link" in cta_blob:
+        return {
+            "phone": None,
+            "wa_url": None,
+            "prefilled_text": None,
+            "source": "native_hidden" if "wa.link" not in cta_blob else "shortlink",
+        }
+
+    return {"phone": None, "wa_url": None, "prefilled_text": None, "source": None}
+
+
+def resolve_whatsapp_from_url(url: str, timeout: float = 6.0) -> dict[str, str | None]:
+    """Sigue redirecciones (wa.link, bit.ly, landing pages) para intentar extraer un WhatsApp real."""
+    if not url or not url.strip():
+        return {"phone": None, "wa_url": None, "prefilled_text": None, "source": None}
+
+    cleaned = _unwrap_facebook_redirect(url.strip())
+    if not cleaned.startswith(("http://", "https://")):
+        cleaned = f"https://{cleaned}"
+
+    # Chequeo directo antes de hacer red
+    digits, prefilled = _extract_whatsapp_from_text_or_url(cleaned)
+    if digits:
+        return {
+            "phone": f"+{digits}",
+            "wa_url": f"https://wa.me/{digits}",
+            "prefilled_text": prefilled,
+            "source": "link",
+        }
+
+    try:
+        with httpx.Client(
+            timeout=timeout,
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; AdScoutBot/1.0)"},
+        ) as client:
+            resp = client.get(cleaned)
+            final_url = str(resp.url)
+            digits, prefilled = _extract_whatsapp_from_text_or_url(final_url)
+            if digits:
+                return {
+                    "phone": f"+{digits}",
+                    "wa_url": f"https://wa.me/{digits}",
+                    "prefilled_text": prefilled,
+                    "source": "redirect",
+                }
+            # Escanear los primeros 150KB del HTML buscando botones wa.me / api.whatsapp.com
+            content_type = resp.headers.get("content-type", "").lower()
+            if "text/html" in content_type or "text/plain" in content_type:
+                body_sample = resp.text[:150_000]
+                digits, prefilled = _extract_whatsapp_from_text_or_url(body_sample)
+                if digits:
+                    return {
+                        "phone": f"+{digits}",
+                        "wa_url": f"https://wa.me/{digits}",
+                        "prefilled_text": prefilled,
+                        "source": "landing",
+                    }
+    except Exception:
+        pass
+
+    return {"phone": None, "wa_url": None, "prefilled_text": None, "source": None}

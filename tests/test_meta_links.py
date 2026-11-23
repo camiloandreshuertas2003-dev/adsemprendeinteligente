@@ -8,6 +8,7 @@ from adscout.services.meta_links import (
     build_ad_library_page_url,
     build_ad_library_search_url,
     extract_page_id,
+    extract_whatsapp_info,
 )
 
 
@@ -62,3 +63,23 @@ def test_build_ad_library_search_url_exact_and_impressions():
     )
     assert "search_type=keyword_unordered" in url_combo
     assert "sort_data[mode]=total_impressions" in url_combo
+
+
+def test_extract_whatsapp_info_from_links_copy_and_native():
+    res_api = extract_whatsapp_info(
+        link_url="https://api.whatsapp.com/send?phone=5511998877665&text=Hola%20quiero%20el%20PDF"
+    )
+    assert res_api["phone"] == "+5511998877665"
+    assert res_api["wa_url"] == "https://wa.me/5511998877665"
+    assert res_api["prefilled_text"] == "Hola quiero el PDF"
+
+    res_wame = extract_whatsapp_info(link_url="https://wa.me/573001234567")
+    assert res_wame["phone"] == "+573001234567"
+
+    res_copy = extract_whatsapp_info(ad_text="Escríbenos al +57 300 987 6543 para recibir el PDF")
+    assert res_copy["phone"] == "+573009876543"
+    assert res_copy["source"] == "copy"
+
+    res_native = extract_whatsapp_info(cta="Enviar mensaje de WhatsApp")
+    assert res_native["phone"] is None
+    assert res_native["source"] == "native_hidden"
