@@ -265,12 +265,16 @@ def _render_xray_tab(ctx: AppContext, page_id: str | None, page_ads: list[Ad]) -
     max_days = max(a.days_active() for a in page_ads)
     unique_domains = sorted({a.link_domain for a in page_ads if a.link_domain})
 
-    h1, h2 = st.columns([2.2, 1.2])
+    fb_profile_url = f"https://www.facebook.com/{page_id}"
+
+    h1, h2, h3 = st.columns([2.0, 1.2, 1.2])
     with h1:
         st.subheader(f"📊 {page_name}")
         st.caption(f"Page ID: `{page_id}` · Total leídos: **{len(page_ads)} anuncios**")
     with h2:
-        st.link_button("🕵️ Ver todos en Meta Ad Library ↗", direct_page_url, use_container_width=True)
+        st.link_button("📄 Ver Perfil en Facebook ↗", fb_profile_url, use_container_width=True)
+    with h3:
+        st.link_button("🕵️ Ver en Meta Ad Library ↗", direct_page_url, use_container_width=True)
 
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Anuncios activos", len(active_ads))
@@ -597,8 +601,9 @@ def _render_saved_profiles_tab(ctx: AppContext) -> None:
             country="ALL",
             sort_by_impressions=True,
         )
+        fb_profile_url = f"https://www.facebook.com/{s['page_id']}"
         with st.container(border=True):
-            c1, c2, c3, c4 = st.columns([2.2, 2.2, 1.3, 1.3])
+            c1, c2, c3, c4, c5 = st.columns([2.0, 2.0, 1.1, 1.2, 1.2])
             with c1:
                 st.markdown(f"**{s['page_name']}**")
                 st.caption(f"ID: `{s['page_id']}` · Estado: **{s['status']}**")
@@ -607,12 +612,14 @@ def _render_saved_profiles_tab(ctx: AppContext) -> None:
                 if s["checkout_url"]:
                     st.markdown(f"[Abrir checkout/web ↗]({s['checkout_url']})")
             with c3:
-                if st.button("📊 Ver perfil", key=f"load_saved_{s['page_id']}_{s['country']}", use_container_width=True):
+                if st.button("📊 Ver", key=f"load_saved_{s['page_id']}_{s['country']}", use_container_width=True):
                     st.session_state["active_competitor_page_id"] = s["page_id"]
                     st.session_state["competitor_input_value"] = s["page_id"]
                     st.rerun()
             with c4:
-                st.link_button("🕵️ Abrir en FB ↗", direct_url, use_container_width=True)
+                st.link_button("📄 Perfil FB ↗", fb_profile_url, use_container_width=True)
+            with c5:
+                st.link_button("🕵️ Anuncios ↗", direct_url, use_container_width=True)
 
     st.divider()
     del_options = {f"{s['page_name']} ({s['page_id']}) — {s['status']}": s for s in saved}
