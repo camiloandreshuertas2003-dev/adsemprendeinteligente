@@ -60,8 +60,12 @@ class GeminiProvider(LLMProvider):
         if not self.api_key:
             raise LLMConfigError("GEMINI_API_KEY no está configurada en .env.")
         from google import genai  # Importación diferida para arrancar sin dependencias activas
+        from google.genai import types
 
-        return genai.Client(api_key=self.api_key)
+        return genai.Client(
+            api_key=self.api_key,
+            http_options=types.HttpOptions(api_version="v1beta"),
+        )
 
     def invoke(self, prompt: str, system_prompt: str = SYSTEM_PROMPT) -> tuple[str, list[str]]:
         client = self._get_client()
