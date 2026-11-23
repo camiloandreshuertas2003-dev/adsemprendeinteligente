@@ -70,23 +70,27 @@ class ApifySource(AdSource):
     def _build_actor_input(self, market_config: MarketConfig, keywords: list[str], limit: int) -> dict[str, Any]:
         """Construye las URLs públicas de búsqueda en Meta Ad Library como entrada del actor."""
         if self.custom_urls:
-            start_urls = [{"url": url} for url in self.custom_urls]
-        else:
-            effective_keywords = [kw.strip() for kw in keywords if kw.strip()] or market_config.keywords
-            start_urls = [
-                {
-                    "url": build_ad_library_search_url(
-                        query=kw,
-                        country=market_config.country,
-                        active_status="active",
-                        media_type=self.media_type,
-                        min_days_active=self.min_days_active,
-                        exact_phrase=self.exact_phrase,
-                        sort_by_impressions=self.sort_by_impressions,
-                    )
-                }
-                for kw in effective_keywords
-            ]
+            return {
+                "startUrls": [{"url": url} for url in self.custom_urls],
+                "resultsLimit": limit,
+                "isDetailsPerAd": True,
+            }
+
+        effective_keywords = [kw.strip() for kw in keywords if kw.strip()] or market_config.keywords
+        start_urls = [
+            {
+                "url": build_ad_library_search_url(
+                    query=kw,
+                    country=market_config.country,
+                    active_status="active",
+                    media_type=self.media_type,
+                    min_days_active=self.min_days_active,
+                    exact_phrase=self.exact_phrase,
+                    sort_by_impressions=self.sort_by_impressions,
+                )
+            }
+            for kw in effective_keywords
+        ]
         return {
             "startUrls": start_urls,
             "resultsLimit": limit,

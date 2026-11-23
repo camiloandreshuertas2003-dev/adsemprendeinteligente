@@ -14,16 +14,16 @@ from adscout.ui.page_trends import render_trends_page
 
 def main() -> None:
     st.set_page_config(
-        page_title="AdScout — Cazador de Productos Digitales",
-        page_icon="🔎",
+        page_title="AdScout — Investigación de Competidores",
+        page_icon="🕵️",
         layout="wide",
     )
 
     ctx = build_app_context()
 
     with st.sidebar:
-        st.title("🔎 AdScout")
-        st.caption("Encuentra y espía productos digitales ganadores en Meta Ad Library")
+        st.title("🕵️ AdScout")
+        st.caption("Pega un perfil ganador de Meta Ad Library y haz su ingeniería inversa con IA")
 
         if not ctx.markets:
             st.error(
@@ -35,7 +35,7 @@ def main() -> None:
         market_codes = list(ctx.markets.keys())
         default_idx = market_codes.index("brasil") if "brasil" in market_codes else 0
         selected_code = st.selectbox(
-            "País principal",
+            "Mercado de referencia",
             options=market_codes,
             index=default_idx,
             format_func=lambda code: f"{ctx.markets[code].name} ({ctx.markets[code].country})",
@@ -43,12 +43,11 @@ def main() -> None:
         active_market = ctx.markets[selected_code]
 
         page = st.radio(
-            "¿Qué quieres hacer?",
+            "Navegación",
             options=[
-                "1. 🔎 Buscar y Espiar",
-                "2. 🏆 Ganadores y Favoritos",
-                "3. ✨ Analizar con IA",
-                "4. 📥 Importar y Tendencias",
+                "1. 🕵️ Investigar Perfil Ganador",
+                "2. 🏆 Comparar Todos los Perfiles",
+                "3. 📥 Importar / Herramientas",
             ],
         )
 
@@ -56,21 +55,22 @@ def main() -> None:
         with st.expander("⚙️ Estado del sistema", expanded=False):
             is_pg = ctx.db_backend == "postgresql"
             apify_ok = bool(ctx.settings.apify_api_token or st.session_state.get("session_apify_token"))
-            st.caption(f"Apify (Búsqueda auto): **{'✅ Conectado' if apify_ok else '⚪ Sin clave'}**")
-            st.caption(f"Mercados activos: **{len(ctx.markets)} países**")
+            st.caption(f"Apify (Lector de perfiles): **{'✅ Conectado' if apify_ok else '⚪ Sin clave'}**")
             st.caption(f"Base de datos: **{'🟢 Supabase (PostgreSQL)' if is_pg else '🟡 SQLite local/temp'}**")
-            st.caption(f"Gemini: {'✅ Activo' if ctx.gemini.is_configured() else '⚪ Sin clave'}")
-            st.caption(f"Perplexity: {'✅ Activo' if ctx.perplexity.is_configured() else '⚪ Sin clave'}")
+            st.caption(f"Gemini IA: {'✅ Activo' if ctx.gemini.is_configured() else '⚪ Sin clave'}")
+            st.caption(f"Perplexity IA: {'✅ Activo' if ctx.perplexity.is_configured() else '⚪ Sin clave'}")
             st.caption(f"Cuota IA hoy: `{ctx.limiter.used_today()} / {ctx.limiter.daily_limit}`")
 
-    if page == "1. 🔎 Buscar y Espiar":
+    if page == "1. 🕵️ Investigar Perfil Ganador":
         render_hunter_page(ctx, active_market)
-    elif page == "2. 🏆 Ganadores y Favoritos":
+    elif page == "2. 🏆 Comparar Todos los Perfiles":
         render_winners_hub_page(ctx, active_market)
-    elif page == "3. ✨ Analizar con IA":
-        render_detail_page(ctx, active_market)
-    elif page == "4. 📥 Importar y Tendencias":
-        tab_import, tab_trends = st.tabs(["📥 Importar Anuncios", "📈 Tendencias de Nichos"])
+    elif page == "3. 📥 Importar / Herramientas":
+        tab_ai_copy, tab_import, tab_trends = st.tabs(
+            ["✨ Tropicalizador Rápido", "📥 Importar CSV/JSON", "📈 Tendencias"]
+        )
+        with tab_ai_copy:
+            render_detail_page(ctx, active_market)
         with tab_import:
             render_market_page(ctx, active_market)
         with tab_trends:

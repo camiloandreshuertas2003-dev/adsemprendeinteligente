@@ -199,3 +199,68 @@ class GeminiProvider(LLMProvider):
         raw_text, _ = self.invoke(prompt)
         limiter.record_call(provider=self.provider_name, action="tropicalize_offer", target_id=target_id)
         return extract_json_object(raw_text)
+
+    def reverse_engineer_competitor_page(
+        self,
+        page_name: str,
+        page_id: str,
+        ads: list[Ad],
+        target_countries: str,
+        limiter: DailyCallLimiter,
+    ) -> dict[str, Any]:
+        """Analiza todos los anuncios de un competidor ganador y genera una investigación de mercado completa."""
+        if not self.is_configured():
+            raise LLMConfigError(
+                "GEMINI_API_KEY no está configurada. Agrégala en Streamlit Secrets o en .env."
+            )
+        if not ads:
+            raise LLMError("No hay anuncios cargados para analizar esta página.")
+
+        limiter.assert_within_limit()
+
+        # Priorizar los anuncios más antiguos y con más variantes (señales reales de rentabilidad)
+        sorted_ads = sorted(
+            ads,
+            key=lambda a: (a.is_active, a.days_active(), a.variants_count),
+            reverse=True,
+        )[:15]
+
+        ads_summary_lines: list[str] = []
+        for idx, ad in enumerate(sorted_ads, start=1):
+            snippet = (ad.ad_text or "").replace("\n", " ").strip()[:320]
+            ads_summary_lines.append(
+                f"{idx}. [Activo: {'Sí' if ad.is_active else 'No'} | {ad.days_active()} días | "
+                f"{ad.variants_count} variantes | Dominio: {ad.link_domain or 'N/D'}]\n"
+                f"   Titular: {ad.headline or '(sin titular)'}\n"
+                f"   Copy: {snippet or '(sin texto)'}"
+            )
+
+        ads_blob = "\n".join(ads_summary_lines)
+        prompt = (
+            f"Eres un estratega senior de investigación de mercado e infoproductos (ebooks, PDFs, guías, cursos).\n"
+            f"Analiza el conjunto completo de anuncios activos del competidor '{page_name}' (Page ID: {page_id}) "
+            f"para hacer ingeniería inversa de su oferta y diseñar una versión superior para {target_countries}.\n\n"
+            f"ANUNCIOS DEL COMPETIDOR (ordenados por antigüedad y variantes):\n{ads_blob}\n\n"
+            "Devuelve EXCLUSIVAMENTE un objeto JSON válido con estas claves exactas (todo en español):\n"
+            "{\n"
+            '  "nicho": "nombre corto y claro del nicho (ej. Recetas Sin Azúcar, Finanzas Personales)",\n'
+            '  "que_vende": "qué producto digital vende exactamente y en qué formato",\n'
+            '  "promesa_principal": "la gran promesa o transformación central que usa para vender",\n'
+            '  "publico_objetivo": "perfil específico del comprador (dolor, edad/situación, urgencia)",\n'
+            '  "angulos_ganadores": ["Ángulo 1...", "Ángulo 2...", "Ángulo 3..."],\n'
+            '  "mejores_hooks_es": ["Hook 1 adaptado al español...", "Hook 2...", "Hook 3..."],\n'
+            '  "debilidades_oportunidades": ["Brecha/oportunidad 1 para superarlo...", "Brecha 2...", "Brecha 3..."],\n'
+            '  "titulo_sugerido_es": "título comercial ganador en español para tu propia versión mejorada",\n'
+            '  "precio_sugerido_usd": "precio low-ticket sugerido (ej. $9 - $19 USD)",\n'
+            '  "estructura_pdf": ["Capítulo 1...", "Capítulo 2...", "Capítulo 3...", "Capítulo 4...", "Capítulo 5..."],\n'
+            '  "bonos_sugeridos": ["Bono 1...", "Bono 2...", "Bono 3..."],\n'
+            '  "copies_listos_es": ["Copy completo 1 listo para FB/IG Ads...", "Copy 2...", "Copy 3..."]\n'
+            "}"
+        )
+        raw_text, _ = self.invoke(prompt)
+        limiter.record_call(
+            provider=self.provider_name,
+            action="reverse_engineer_page",
+            target_id=page_id,
+        )
+        return extract_json_object(raw_text)
