@@ -14,9 +14,7 @@ from adscout.services.meta_links import (
     build_ad_library_ad_url,
     build_ad_library_page_url,
     extract_page_id,
-    extract_whatsapp_info,
     is_real_meta_id,
-    resolve_whatsapp_from_url,
 )
 from adscout.sources import (
     ApifySource,
@@ -27,7 +25,8 @@ from adscout.sources import (
 )
 from adscout.ui.context import AppContext
 
-FAVORITE_STATUSES = ["Para modelar", "En revisión", "Modelado", "Descartado"]
+MOLDABILITY_STATUSES = ["✅ Moldeable", "⚠️ Difícil", "❌ No moldeable"]
+FAVORITE_STATUSES = ["✅ Moldeable", "⚠️ Difícil", "❌ No moldeable", "Para modelar", "Modelado", "Descartado"]
 
 
 def _get_active_apify_token(ctx: AppContext) -> str | None:
@@ -281,75 +280,70 @@ def _render_xray_tab(ctx: AppContext, page_id: str | None, page_ads: list[Ad]) -
 
     # Mapa de embudo / checkouts reales
     url_counter = Counter(a.link_url for a in page_ads if a.link_url)
+    top_checkout = url_counter.most_common(1)[0][0] if url_counter else None
 
-    # Detección de WhatsApp (directo en links/copy + rastreador opcional en wa.link / landings)
-    wa_cache_key = f"wa_resolved_{page_id}"
-    resolved_by_url: dict[str, dict[str, str | None]] = st.session_state.setdefault(wa_cache_key, {})
-
-    wa_by_ad: dict[str, dict[str, str | None]] = {}
-    found_phones: dict[str, dict[str, str | None]] = {}
-    has_native_hidden = False
-
-    for ad in page_ads:
-        info = extract_whatsapp_info(
-            link_url=ad.link_url,
-            ad_text=ad.ad_text,
-            cta=ad.cta,
-            raw_json=ad.raw_json,
-        )
-        if not info["phone"] and ad.link_url and ad.link_url in resolved_by_url:
-            cached_info = resolved_by_url[ad.link_url]
-            if cached_info.get("phone"):
-                info = cached_info
-        wa_by_ad[ad.ad_id] = info
-        if info["phone"]:
-            found_phones.setdefault(info["phone"], info)
-        elif info["source"] == "native_hidden":
-            has_native_hidden = True
+    # Evaluación manual rápida en 1 clic: ¿El video es moldeable / replicable?
+    saved_list = ctx.repository.list_saved_offers()
+    existing_saved = next((s for s in saved_list if s["page_id"] == page_id), None)
+    current_verdict = existing_saved["status"] if existing_saved else None
+    current_notes = existing_saved["notes"] if existing_saved else ""
 
     with st.container(border=True):
-        w_head1, w_head2 = st.columns([2.2, 1.4])
-        with w_head1:
-            st.markdown("### 📱 WhatsApp detectados en este perfil")
-        with w_head2:
-            unique_urls_to_probe = [u for u, _ in url_counter.most_common(10) if u not in resolved_by_url]
-            if unique_urls_to_probe:
-                if st.button(
-                    f"🔎 Rastrear WhatsApp en {len(unique_urls_to_probe)} links/landings",
-                    use_container_width=True,
-                    key=f"wa_probe_btn_{page_id}",
-                ):
-                    with st.spinner("Siguiendo redirecciones (wa.link, bit.ly) y escaneando landings..."):
-                        for u in unique_urls_to_probe:
-                            resolved_by_url[u] = resolve_whatsapp_from_url(u)
-                    st.rerun()
+        st.markdown("### 🎬 ¿El video de este perfil es moldeable?")
+        st.caption(
+            "¿Puedes replicar el video o crear uno nuevo fácilmente para recrear el anuncio? "
+            "Marca tu decisión en 1 clic y quedará guardada en **⭐ Mis Perfiles Guardados**."
+        )
+        if current_verdict:
+            st.info(f"Tu veredicto actual: **{current_verdict}**" + (f" — _{current_notes}_" if current_notes else ""))
 
-        if found_phones:
-            for phone, info in found_phones.items():
-                p_col1, p_col2, p_col3 = st.columns([1.4, 2.2, 1.2])
-                with p_col1:
-                    st.markdown(f"**`{phone}`** _(vía {info.get('source')})_")
-                with p_col2:
-                    if info.get("prefilled_text"):
-                        st.caption(f"Mensaje prellenado: \"{info['prefilled_text'][:120]}\"")
-                    else:
-                        st.caption("Número extraído directamente del anuncio / destino.")
-                with p_col3:
-                    if info.get("wa_url"):
-                        st.link_button("💬 Abrir WhatsApp ↗", info["wa_url"], use_container_width=True)
-        else:
-            if has_native_hidden:
-                fb_about_url = f"https://www.facebook.com/{page_id}/about"
-                st.info(
-                    "🔒 Este perfil usa el **botón nativo de WhatsApp de Meta** (Click-to-WhatsApp), "
-                    "por lo que Facebook oculta el número en la Biblioteca de Anuncios. "
-                    f"Puedes revisar si lo tienen público en su página: [Ver Información de la Página en FB ↗]({fb_about_url})"
+        mold_note = st.text_input(
+            "Nota sobre cómo replicar el video (opcional)",
+            value=current_notes,
+            placeholder="Ej: Fácil de replicar con voz en off + grabando el PDF en pantalla en CapCut",
+            key=f"mold_note_{page_id}",
+        )
+
+        m_col1, m_col2, m_col3 = st.columns(3)
+        with m_col1:
+            if st.button("✅ Sí, es moldeable", type="primary", use_container_width=True, key=f"mold_yes_{page_id}"):
+                ctx.repository.upsert_saved_offer(
+                    page_id=page_id,
+                    country=page_ads[0].country or "ALL",
+                    page_name=page_name,
+                    status="✅ Moldeable",
+                    notes=mold_note.strip(),
+                    fb_page_url=direct_page_url,
+                    checkout_url=top_checkout,
                 )
-            else:
-                st.caption(
-                    "No se detectó ningún enlace `wa.me` o `api.whatsapp.com` directo en los anuncios. "
-                    "Si mandan a una landing o acortador (`wa.link`), pulsa **🔎 Rastrear WhatsApp en links/landings** arriba."
+                st.success(f"**{page_name}** marcado como **✅ Moldeable**.")
+                st.rerun()
+        with m_col2:
+            if st.button("⚠️ Difícil / Requiere ajustes", use_container_width=True, key=f"mold_mid_{page_id}"):
+                ctx.repository.upsert_saved_offer(
+                    page_id=page_id,
+                    country=page_ads[0].country or "ALL",
+                    page_name=page_name,
+                    status="⚠️ Difícil",
+                    notes=mold_note.strip(),
+                    fb_page_url=direct_page_url,
+                    checkout_url=top_checkout,
                 )
+                st.warning(f"**{page_name}** marcado como **⚠️ Difícil**.")
+                st.rerun()
+        with m_col3:
+            if st.button("❌ No moldeable", use_container_width=True, key=f"mold_no_{page_id}"):
+                ctx.repository.upsert_saved_offer(
+                    page_id=page_id,
+                    country=page_ads[0].country or "ALL",
+                    page_name=page_name,
+                    status="❌ No moldeable",
+                    notes=mold_note.strip(),
+                    fb_page_url=direct_page_url,
+                    checkout_url=top_checkout,
+                )
+                st.error(f"**{page_name}** marcado como **❌ No moldeable**.")
+                st.rerun()
 
     if url_counter:
         st.markdown("### 🔗 Embudo y Destinos (a dónde manda el tráfico)")
@@ -382,13 +376,6 @@ def _render_xray_tab(ctx: AppContext, page_id: str | None, page_ads: list[Ad]) -
     )
     ad_rows = []
     for ad in sorted_ads:
-        wa_info = wa_by_ad.get(ad.ad_id, {})
-        if wa_info.get("phone"):
-            wa_label = wa_info["phone"]
-        elif wa_info.get("source") == "native_hidden":
-            wa_label = "🔒 Nativo Meta"
-        else:
-            wa_label = "-"
         ad_rows.append(
             {
                 "Estado": "🟢 Activo" if ad.is_active else "⚪ Inactivo",
@@ -396,7 +383,6 @@ def _render_xray_tab(ctx: AppContext, page_id: str | None, page_ads: list[Ad]) -
                 "Variantes": ad.variants_count,
                 "Titular": ad.headline or "(sin titular)",
                 "Copy (extracto)": (ad.ad_text or "").replace("\n", " ")[:140] or "-",
-                "📱 WhatsApp": wa_label,
                 "Dominio": ad.link_domain or "-",
                 "Ver Anuncio (FB)": build_ad_library_ad_url(
                     ad_id=ad.ad_id,
@@ -506,6 +492,15 @@ def _render_reverse_engineering_tab(
     report = st.session_state.get(report_key)
     if report:
         with st.container(border=True):
+            st.markdown(f"### 🎬 Video Moldeable (Evaluación IA): **{report.get('video_moldeable', 'N/D')}**")
+            if report.get("razon_moldeabilidad"):
+                st.write(report["razon_moldeabilidad"])
+            if report.get("como_replicar_video"):
+                st.markdown("**Cómo replicar este video fácilmente paso a paso:**")
+                for paso in report.get("como_replicar_video", []):
+                    st.write(f"- {paso}")
+
+        with st.container(border=True):
             st.markdown(f"### 🎯 Nicho detectado: `{report.get('nicho', 'N/D')}`")
             st.write(f"**📦 Qué vende:** {report.get('que_vende', '')}")
             st.write(f"**💡 Promesa principal:** {report.get('promesa_principal', '')}")
@@ -579,11 +574,19 @@ def _render_reverse_engineering_tab(
 
 def _render_saved_profiles_tab(ctx: AppContext) -> None:
     st.subheader("⭐ Mis Perfiles Ganadores Guardados")
-    saved = ctx.repository.list_saved_offers()
+    filter_status = st.radio(
+        "Filtrar por moldeabilidad / estado",
+        options=["Todos", "✅ Moldeable", "⚠️ Difícil", "❌ No moldeable"],
+        horizontal=True,
+        key="saved_profiles_filter_status",
+    )
+    saved = ctx.repository.list_saved_offers(
+        status=None if filter_status == "Todos" else filter_status
+    )
     if not saved:
         st.info(
-            "Aún no tienes perfiles guardados. Analiza un perfil ganador y pulsa **Guardar ⭐** "
-            "en la pestaña **📊 Radiografía y Anuncios**."
+            "No hay perfiles en esta categoría todavía. Analiza un perfil y marca si su video es "
+            "**✅ Moldeable**, **⚠️ Difícil** o **❌ No moldeable** en **📊 Radiografía y Anuncios**."
         )
         return
 
