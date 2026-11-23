@@ -466,6 +466,31 @@ def _render_reverse_engineering_tab(
         "su oferta, dolores, ángulos ganadores, debilidades y armarte una versión mejorada lista para lanzar."
     )
 
+    session_gemini = str(st.session_state.get("session_gemini_key", "")).strip()
+    if session_gemini:
+        ctx.gemini.api_key = session_gemini
+
+    with st.expander("🔑 Configurar / cambiar clave de Gemini (si sale error 401)", expanded=not ctx.gemini.is_configured()):
+        st.caption("Obtén una clave gratis en [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (empieza por `AIza...`).")
+        gk1, gk2 = st.columns([3, 1.2])
+        with gk1:
+            new_gemini_key = st.text_input(
+                "GEMINI_API_KEY (AIza...)",
+                type="password",
+                placeholder="AIza...",
+                key=f"gemini_override_input_{page_id}",
+            )
+        with gk2:
+            st.write("")
+            st.write("")
+            if st.button("Usar clave", use_container_width=True, key=f"gemini_override_btn_{page_id}"):
+                cleaned_key = new_gemini_key.strip().strip('"').strip("'")
+                if cleaned_key:
+                    st.session_state["session_gemini_key"] = cleaned_key
+                    ctx.gemini.api_key = cleaned_key
+                    st.success("Clave de Gemini actualizada para esta sesión.")
+                    st.rerun()
+
     target_countries = st.text_input(
         "¿Para qué países en español quieres adaptar esta oferta?",
         value="Colombia, México, Chile, Perú y Argentina",

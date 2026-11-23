@@ -44,7 +44,7 @@ class GeminiProvider(LLMProvider):
         client_override: Any = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
-        self.api_key = (api_key or "").strip()
+        self.api_key = (api_key or "").strip().strip('"').strip("'")
         self.model_name = model_name.strip() or "gemini-2.5-flash"
         self.max_retries = max_retries
         self.base_backoff_seconds = base_backoff_seconds
@@ -87,6 +87,16 @@ class GeminiProvider(LLMProvider):
                 raise
             except Exception as exc:
                 last_exc = exc
+                err_text = str(exc)
+                if any(
+                    marker in err_text
+                    for marker in ("401", "UNAUTHENTICATED", "API_KEY_INVALID", "API key not valid", "ACCESS_TOKEN_TYPE_UNSUPPORTED")
+                ):
+                    raise LLMConfigError(
+                        "Tu `GEMINI_API_KEY` no es válida o no es una clave de Google AI Studio. "
+                        "Crea una clave gratuita en https://aistudio.google.com/apikey (debe empezar por `AIza...`) "
+                        "y pégala en Streamlit Cloud → Settings → Secrets como `GEMINI_API_KEY = \"AIza...\"`."
+                    ) from exc
                 if attempt < self.max_retries:
                     delay = self.base_backoff_seconds * (2**attempt)
                     logger.warning(
